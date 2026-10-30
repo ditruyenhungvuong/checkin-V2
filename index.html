@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <!-- Cho phép phóng to: mẹ bầu mắt mỏi cần zoom được chữ -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Check-in Cảm Xúc Mẹ Bầu</title>
+    <!-- Favicon emoji SVG nội tuyến: không cần file ảnh, hết lỗi 404 favicon.ico -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%8C%B8%3C/text%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito:ital,wght@0,400;0,600;0,700;0,800;1,400;1,600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- Canvas pháo hoa nổi trên cùng (trang trí, trình đọc màn hình bỏ qua) -->
+    <canvas id="fireworks-canvas" aria-hidden="true"></canvas>
+
+    <!-- Nhạc nền thư giãn: KHÔNG tải trước (file ~19 MB), chỉ phát khi chị tự bật -->
+    <audio id="bg-music" loop preload="none">
+        <source src="background-music.mp3" type="audio/mpeg">
+    </audio>
+
+    <div class="app-container">
+
+        <!-- ==========================================
+             TRANG CHECK-IN DUY NHẤT
+             ========================================== -->
+        <main id="page-checkin" class="page-screen active">
+            <div class="checkin-card">
+
+                <!-- Tiêu đề mở đầu -->
+                <header class="checkin-header">
+                    <!-- Hàng công cụ: nút nhạc nằm trong card (không nổi), nên không bao giờ đè chữ -->
+                    <div class="header-tools">
+                        <span id="music-hint" class="music-hint" aria-hidden="true">Muốn có nhạc nhẹ? Chạm vào đây nhé</span>
+                        <button type="button" id="music-toggle-btn" class="music-btn muted" data-act="music" aria-pressed="false" aria-label="Nhạc nền">🔇</button>
+                    </div>
+                    <span class="badge-tag">🌸 Nhật Ký Chăm Sóc Mẹ Bầu</span>
+                    <h1 class="main-title">Check-in Cảm Xúc Hôm Nay</h1>
+                    <p class="subtitle">Dành một chút thời gian lắng nghe và kết nối với cảm xúc của chính mình chị nhé.</p>
+                </header>
+
+                <!-- KHỐI 0: NHẬP SỐ ĐIỆN THOẠI -->
+                <section class="form-section phone-section">
+                    <label for="input-phone" class="section-label">
+                        <span class="step-num" aria-hidden="true">📱</span> Số điện thoại của chị
+                    </label>
+                    <p id="phone-note" class="phone-note">Số điện thoại giúp bác sĩ nhận ra lượt check-in của chị. Số chỉ lưu trong bảng của bác sĩ phụ trách, không hiện cho người khác. Nếu mạng yếu, máy này giữ tạm tới khi gửi được.</p>
+                    <div class="input-wrapper">
+                        <input type="tel" id="input-phone" class="field-input" placeholder="Ví dụ: 0912 345 678" autocomplete="tel" maxlength="20" aria-describedby="phone-note phone-error">
+                    </div>
+                    <p id="phone-error" class="phone-error" aria-live="polite"></p>
+                </section>
+
+                <hr class="section-divider">
+
+                <!-- PHẦN 1: ĐÁNH GIÁ MỨC CẢM XÚC 1 - 10 -->
+                <section class="form-section part-section" id="part-1">
+                    <h2 class="section-title" id="part1-title">
+                        <span class="step-num">1</span> <span>Hôm nay chị cảm thấy thế nào?</span>
+                    </h2>
+                    <p class="section-hint">Kéo thanh trượt, bé Capybara sẽ đổi mặt theo. Mức nào cũng được nhé.</p>
+
+                    <div id="emotion-display-area" class="emotion-display-area">
+                        <div class="emotion-capy-frame">
+                            <img id="current-capy" class="emotion-capy" src="capy-level-05.png" alt="Bé Capybara mức 5: Bình thường (Ổn)" decoding="async">
+                            <span id="current-capy-emoji" class="emotion-capy emotion-emoji" aria-hidden="true" hidden>😐</span>
+                        </div>
+                        <!-- Không aria-live: thanh trượt đã có aria-valuetext, tránh đọc mức hai lần -->
+                        <div id="current-status" class="emotion-status">5 - Bình thường (Ổn)</div>
+                    </div>
+
+                    <div class="slider-container">
+                        <input type="range" min="1" max="10" value="5" id="emotion-range"
+                               class="styled-range" aria-labelledby="part1-title"
+                               aria-valuetext="5 - Bình thường (Ổn)">
+                        <div class="slider-labels" aria-hidden="true">
+                            <span>1 (Tuyệt vọng)</span>
+                            <span>10 (Rất tuyệt vời)</span>
+                        </div>
+                    </div>
+                </section>
+
+                <hr class="section-divider">
+
+                <!-- PHẦN 2: GỌI TÊN CẢM XÚC (6 THẺ CAPYBARA)
+                     Mỗi thẻ là <button>: chọn được bằng bàn phím (Tab, Enter, Space) và trình đọc màn hình -->
+                <section class="form-section part-section" id="part-2">
+                    <h2 class="section-title" id="part2-title">
+                        <span class="step-num">2</span> <span>Cảm xúc hiện tại của chị giống bé Capybara nào nhất?</span>
+                    </h2>
+                    <p class="section-hint">Chạm chọn 1 bé giống chị nhất lúc này. Cảm xúc không đúng cũng không sai.</p>
+
+                    <div class="emotion-grid" role="group" aria-labelledby="part2-title">
+                        <button type="button" class="capy-card" data-act="pick" data-emotion="Vui vẻ" aria-pressed="false">
+                            <span class="capy-img-box" data-emoji="😊">
+                                <img src="vui.jpg" alt="" class="capy-img" decoding="async">
+                            </span>
+                            <span class="capy-name">Vui vẻ</span>
+                            <span class="check-mark-badge" aria-hidden="true">✓</span>
+                        </button>
+
+                        <button type="button" class="capy-card" data-act="pick" data-emotion="Buồn" aria-pressed="false">
+                            <span class="capy-img-box" data-emoji="😢">
+                                <img src="buon.jpg" alt="" class="capy-img" decoding="async">
+                            </span>
+                            <span class="capy-name">Buồn</span>
+                            <span class="check-mark-badge" aria-hidden="true">✓</span>
+                        </button>
+
+                        <button type="button" class="capy-card" data-act="pick" data-emotion="Lo lắng" aria-pressed="false">
+                            <span class="capy-img-box" data-emoji="😟">
+                                <img src="khoc.jpg" alt="" class="capy-img" decoding="async">
+                            </span>
+                            <span class="capy-name">Lo lắng</span>
+                            <span class="check-mark-badge" aria-hidden="true">✓</span>
+                        </button>
+
+                        <button type="button" class="capy-card" data-act="pick" data-emotion="Tức giận" aria-pressed="false">
+                            <span class="capy-img-box" data-emoji="😠">
+                                <img src="tuc.jpg" alt="" class="capy-img" decoding="async">
+                            </span>
+                            <span class="capy-name">Tức giận</span>
+                            <span class="check-mark-badge" aria-hidden="true">✓</span>
+                        </button>
+
+                        <button type="button" class="capy-card" data-act="pick" data-emotion="Hoảng hốt" aria-pressed="false">
+                            <span class="capy-img-box" data-emoji="😨">
+                                <img src="hoang_hot.jpg" alt="" class="capy-img" decoding="async">
+                            </span>
+                            <span class="capy-name">Hoảng hốt</span>
+                            <span class="check-mark-badge" aria-hidden="true">✓</span>
+                        </button>
+
+                        <button type="button" class="capy-card" data-act="pick" data-emotion="Khó chịu" aria-pressed="false">
+                            <span class="capy-img-box" data-emoji="😣">
+                                <img src="kho_chiu.jpg" alt="" class="capy-img" decoding="async">
+                            </span>
+                            <span class="capy-name">Khó chịu</span>
+                            <span class="check-mark-badge" aria-hidden="true">✓</span>
+                        </button>
+                    </div>
+                </section>
+
+                <!-- KHU VỰC NÚT HOÀN THÀNH -->
+                <div class="submit-section" id="submit-section">
+                    <p id="submit-hint" class="submit-hint" aria-live="polite">💡 Chị nhập số điện thoại và chạm chọn 1 bé Capybara là xong nhé.</p>
+                    <button type="button" id="btn-submit" class="btn-submit" data-act="submit" disabled>Hoàn thành Check-in →</button>
+                </div>
+
+                <p class="footer-note">Tự đánh giá, không phải thang chẩn đoán.</p>
+            </div>
+        </main>
+
+        <!-- ==========================================
+             TRANG HOÀN THÀNH / CẢM ƠN
+             ========================================== -->
+        <section id="page-success" class="page-screen" aria-labelledby="success-title">
+            <div class="success-card">
+
+                <!-- Dấu tick lớn màu xanh lá với hiệu ứng động -->
+                <div class="success-icon-wrapper" aria-hidden="true">
+                    <svg class="success-checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
+                        <circle class="checkmark-circle" cx="26" cy="26" r="24" fill="none"/>
+                        <path class="checkmark-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+                    </svg>
+                </div>
+
+                <h1 class="success-title" id="success-title" tabindex="-1">Cảm ơn chị đã check-in cảm xúc của mình</h1>
+
+                <!-- Câu vỗ về: script.js đổi theo mức chị chọn (mức thấp không chúc "nhiều niềm vui") -->
+                <p class="success-quote" id="success-quote">Mỗi cảm xúc đều đáng được lắng nghe và vỗ về.</p>
+
+                <div class="success-summary" id="success-summary"></div>
+
+                <button type="button" class="btn-restart" data-act="restart">🌸 Thực hiện check-in khác</button>
+
+                <p class="footer-note">Tự đánh giá, không phải thang chẩn đoán.</p>
+            </div>
+        </section>
+
+        <!-- ==========================================
+             HỖ TRỢ: hiện ở cả hai trang. <details> mở được bằng bàn phím.
+             Số của cơ sở để trống trong script.js (SUPPORT_PHONE) cho tới khi anh Thông xác nhận.
+             ========================================== -->
+        <details class="support-box" id="support-box">
+            <summary class="support-summary">💗 Hỗ trợ</summary>
+            <div class="support-body">
+                <p>Nếu chị thấy quá sức, chị nói với người thân, bác sĩ hoặc nữ hộ sinh đang theo dõi chị nhé. Chị không phải một mình.</p>
+                <p id="support-facility" class="support-facility" hidden></p>
+                <p>Khi thấy không an toàn cho mình hoặc em bé, chị gọi cấp cứu <a href="tel:115" class="support-tel">115</a> hoặc đến cơ sở y tế gần nhất.</p>
+            </div>
+        </details>
+
+    </div>
+
+    <!-- Toast ngắn thay cho alert() -->
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
