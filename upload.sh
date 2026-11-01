@@ -71,7 +71,7 @@ if [ -n "$CONFIG" ]; then
       echo "         Thực thi: Tôi · Ai có quyền: Bất kỳ ai > Triển khai."
       echo "      3. Chép \"URL ứng dụng web\" (https://script.google.com/macros/s/.../exec),"
       echo "         dán vào giữa hai dấu nháy của dòng const GOOGLE_SCRIPT_URL trong $CONFIG, lưu rồi chạy lại."
-      echo "    Chi tiết: đầu file google_apps_script.js, BƯỚC 5."
+      echo "    Chi tiết: đầu file google_apps_script.js, mục KHI CẦN URL MỚI."
       exit 1
     fi
   done

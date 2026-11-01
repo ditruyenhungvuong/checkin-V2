@@ -42,16 +42,15 @@
                     <p class="subtitle">Dành một chút thời gian lắng nghe và kết nối với cảm xúc của chính mình chị nhé.</p>
                 </header>
 
-                <!-- KHỐI 0: NHẬP SỐ ĐIỆN THOẠI -->
-                <section class="form-section phone-section">
-                    <label for="input-phone" class="section-label">
-                        <span class="step-num" aria-hidden="true">📱</span> Số điện thoại của chị
+                <!-- KHỐI 0: NHẬP MÃ SỐ BỆNH NHÂN (anh Thông đổi từ SĐT ngày 01/11/2026; chỉ chữ số, 3–20 số) -->
+                <section class="form-section patient-id-section">
+                    <label for="input-patient-id" class="section-label">
+                        <span class="step-num" aria-hidden="true">🆔</span> Mã số bệnh nhân của chị
                     </label>
-                    <p id="phone-note" class="phone-note">Số điện thoại giúp bác sĩ nhận ra lượt check-in của chị. Số chỉ lưu trong bảng của bác sĩ phụ trách, không hiện cho người khác. Nếu mạng yếu, máy này giữ tạm tới khi gửi được.</p>
                     <div class="input-wrapper">
-                        <input type="tel" id="input-phone" class="field-input" placeholder="Ví dụ: 0912 345 678" autocomplete="tel" maxlength="20" aria-describedby="phone-note phone-error">
+                        <input type="text" id="input-patient-id" class="field-input" inputmode="numeric" placeholder="Ví dụ: 26012345" autocomplete="off" maxlength="30" aria-describedby="patient-id-error">
                     </div>
-                    <p id="phone-error" class="phone-error" aria-live="polite"></p>
+                    <p id="patient-id-error" class="patient-id-error" aria-live="polite"></p>
                 </section>
 
                 <hr class="section-divider">
@@ -146,7 +145,7 @@
 
                 <!-- KHU VỰC NÚT HOÀN THÀNH -->
                 <div class="submit-section" id="submit-section">
-                    <p id="submit-hint" class="submit-hint" aria-live="polite">💡 Chị nhập số điện thoại và chạm chọn 1 bé Capybara là xong nhé.</p>
+                    <p id="submit-hint" class="submit-hint" aria-live="polite">💡 Chị nhập mã số bệnh nhân và chạm chọn 1 bé Capybara là xong nhé.</p>
                     <button type="button" id="btn-submit" class="btn-submit" data-act="submit" disabled>Hoàn thành Check-in →</button>
                 </div>
 

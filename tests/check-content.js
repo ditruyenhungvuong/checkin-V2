@@ -2,7 +2,8 @@
    Rà nội dung tĩnh app Check-in Cảm Xúc Mẹ Bầu (QA, Phần A).
    Đọc index.html / script.js / styles.css, liệt kê chuỗi hiển thị và đối chiếu
    style guide mục 2 (giọng "chị", không "bạn", không "hệ thống", không "Vui lòng", không alert),
-   mục 3 (prefers-reduced-motion, ảnh lỗi thay emoji), mục 5b (SĐT tùy chọn, dòng "không phải chẩn đoán").
+   mục 3 (prefers-reduced-motion, ảnh lỗi thay emoji), mục 5b (dòng "không phải chẩn đoán").
+   01/11/2026: ô SĐT đổi thành Mã số bệnh nhân (chỉ chữ số, 3–20 số), bỏ câu giải thích dưới ô (anh Thông yêu cầu).
    Bản 28/10/2026: app đã sửa theo docs/qa/checkin-me-bau-tong-hop.md. Mục nào cố ý giữ nguyên vì
    CHỜ anh Thông quyết (mục 4 bản gộp) in dòng "CHỜ ANH", không tính là FAIL nhưng luôn hiện ra.
    Không sửa file app. Chạy: node tests/check-content.js   (FAIL → exit 1)
@@ -84,7 +85,7 @@ h = hit(/\.\.\./);
 T('Chính tả: dùng dấu "…" thay ba chấm "..."', h.length === 0, h.join(' | '));
 h = findLines(js, /\balert\(|\bconfirm\(/);
 T('Không dùng alert()/confirm() (style guide: toast thay alert)', h.length === 0, h.join(' | '));
-h = all.filter(x => x.kind === 'text' && /[❤️💡✨🌸🔐🔄🎵📱🌱🐾]/.test(x.s) && /[.!?]\s*$/.test(x.s) && !/^[^\p{L}]*$/u.test(x.s) && !/^(💡|✨)/.test(x.s)).map(x => x.file + ':' + x.n + ' "' + x.s + '"');
+h = all.filter(x => x.kind === 'text' && /[❤️💡✨🌸🔐🔄🎵🆔🌱🐾]/.test(x.s) && /[.!?]\s*$/.test(x.s) && !/^[^\p{L}]*$/u.test(x.s) && !/^(💡|✨)/.test(x.s)).map(x => x.file + ':' + x.n + ' "' + x.s + '"');
 INFO('Emoji trong câu văn (guide: emoji chỉ ở nút/tiêu đề)', h.join(' | ') || 'không có');
 
 /* ---- Nhãn mức cảm xúc ---- */
@@ -136,7 +137,7 @@ const hints = Object.fromEntries([...hintBlock.matchAll(/(\w+):\s*"([^"]*)"/g)].
 const hintsJs = Object.values(hints);
 INFO('Hint các trạng thái (script.js HINTS)', hintsJs.join(' || '));
 T('Hint ban đầu trong HTML trùng hint "thiếu cả hai" của JS', hintHtml === hints.both, hintHtml + ' <> ' + hints.both);
-T('5 hint (cả hai, thiếu SĐT, SĐT sai, thiếu thẻ, đủ) phân biệt nhau', hintsJs.length === 5 && new Set(hintsJs).size === 5, hintsJs.length);
+T('5 hint (cả hai, thiếu mã số, mã số sai, thiếu thẻ, đủ) phân biệt nhau', hintsJs.length === 5 && new Set(hintsJs).size === 5, hintsJs.length);
 T('Hint đều có xưng "chị"', hintsJs.every(s => /chị/i.test(s)), hintsJs.filter(s => !/chị/i.test(s)).join(' | '));
 T('Hint đặt bằng textContent, trạng thái "đủ" bằng class (không inline style)', /hintEl\.textContent = HINTS\./.test(js) && !/hintEl\.(innerHTML|style)/.test(js));
 
@@ -149,16 +150,18 @@ WAIT('Tiêu đề h1 không viết hoa mọi chữ (Title Case) – guide chỉ 
 /* ---- Trang cảm ơn ---- */
 const successTitle = (htmlNoComment.match(/class="success-title"[^>]*>([^<]*)</) || [])[1];
 T('Trang cảm ơn: tiêu đề gọi "chị", không "bạn"', /chị/.test(successTitle) && !/bạn/.test(successTitle), successTitle);
-T('Trang cảm ơn: tóm tắt che SĐT (maskPhone), không hiện số đầy đủ (guide mục 6)', /maskPhone\(info\.phone\)/.test(js) && !/\$\{payload\.phone\}/.test(js), findLines(js, /Số điện thoại: /).join(' | '));
+T('Trang cảm ơn: tóm tắt che mã số (maskPatientId), không hiện mã đầy đủ (guide mục 6)', /maskPatientId\(info\.patientId\)/.test(js) && !/\$\{payload\.patientId\}/.test(js), findLines(js, /Mã số bệnh nhân: /).join(' | '));
 T('Trang cảm ơn: lời chúc không ép tích cực chung cho mọi mức (có nhánh cho mức thấp)', /level\s*<=?\s*3/.test(js) && /QUOTES\s*=\s*\{[\s\S]*low:/.test(js), 'script.js không rẽ nhánh theo mức cảm xúc');
 const lowQuote = (js.match(/low:\s*"([^"]*)"/) || [])[1] || '';
 T('Trang cảm ơn: câu cho mức thấp không chúc "niềm vui", không emoji trong câu', lowQuote && !/niềm vui|hạnh phúc|❤️/.test(lowQuote), lowQuote);
 
 /* ---- Cỡ S bắt buộc (guide 5b) & mục 3 ---- */
-WAIT('Cỡ S: SĐT tùy chọn / có "Bỏ qua" hoặc "ẩn danh"', /Bỏ qua|ẩn danh|không cần số/i.test(htmlNoComment), 'mục 4.3: SĐT vẫn bắt buộc như cũ, chờ anh quyết');
-T('SĐT bắt buộc thì có dòng giải thích vì sao cần số và ai xem (id="phone-note", gắn aria-describedby)', /id="phone-note"[^>]*>[^<]*(bác sĩ|phòng khám)[^<]*</.test(htmlNoComment) && /aria-describedby="phone-note/.test(htmlNoComment));
-T('SĐT: kiểm định dạng Việt Nam (di động 03/05/07/08/09 10 số, cố định 02x 11 số), không chỉ đếm độ dài', /0\[35789\]\\d\{8\}\|02\\d\{9\}/.test(js) && !/length >= 9|length < 9/.test(js));
-T('SĐT: lỗi mềm có ví dụ (style guide mục 2)', js.includes('Số điện thoại chưa đúng định dạng Việt Nam (ví dụ 0912 345 678).'));
+WAIT('Cỡ S: mã số bệnh nhân tùy chọn / có "Bỏ qua" hoặc "ẩn danh"', /Bỏ qua|ẩn danh|không cần mã/i.test(htmlNoComment), 'mục 4.3: 01/11 anh đổi SĐT thành Mã số bệnh nhân, vẫn bắt buộc; còn chờ anh nói có cho bỏ qua không');
+T('Ô nhập: nhãn "Mã số bệnh nhân của chị", không còn chữ "Số điện thoại", không icon 📱', /<label for="input-patient-id"[^>]*>[\s\S]*?Mã số bệnh nhân của chị\s*<\/label>/.test(htmlNoComment) && !/[Ss]ố điện thoại|📱/.test(htmlNoComment + '\n' + jsStrings.map(x => x.s).join('\n')), findLines(htmlNoComment + '\n' + js, /điện thoại|📱/).join(' | '));
+T('Ô nhập: đã bỏ hẳn câu giải thích dưới ô (phone-note, "giúp bác sĩ nhận ra", "giữ tạm")', !/phone-note|giúp bác sĩ nhận ra|giữ tạm tới khi gửi được/.test(html + js + css));
+T('Ô nhập: type=text, inputmode="numeric", autocomplete="off", placeholder "Ví dụ: 26012345", aria-describedby lỗi', /<input type="text" id="input-patient-id"[^>]*inputmode="numeric"[^>]*placeholder="Ví dụ: 26012345"[^>]*autocomplete="off"[^>]*aria-describedby="patient-id-error"/.test(htmlNoComment), (htmlNoComment.match(/<input[^>]*id="input-patient-id"[^>]*>/) || [])[0]);
+T('Mã số: chỉ chữ số 3–20 sau khi bỏ khoảng trắng/chấm/gạch (không còn chuẩn SĐT Việt Nam)', js.includes(".replace(/[\\s.\\-]/g, '')") && js.includes('/^\\d{3,20}$/') && !/0\[35789\]|normalizePhone|maskPhone/.test(js));
+T('Mã số: lỗi mềm giọng "chị", có ví dụ, kết "nhé" (style guide mục 2)', js.includes('const ID_ERROR = "Chị nhập mã số bệnh nhân (chỉ gồm chữ số, ví dụ 26012345) nhé.";'));
 T('Cỡ S: có dòng "không phải chẩn đoán" / "tự đánh giá"', /chẩn đoán|tự đánh giá/i.test(htmlNoComment));
 T('Mục 3: styles.css có @media (prefers-reduced-motion)', /prefers-reduced-motion/.test(css));
 T('Mục 3: ảnh lỗi tự thay emoji (onerror/fallback)', /addEventListener\('error'/.test(js) && /fallback/.test(js) && /data-emoji="/.test(html) && /id="current-capy-emoji"/.test(html));
@@ -168,7 +171,6 @@ T('Mục 3: favicon (không 404 favicon.ico)', /<link rel="icon" href="data:imag
 T('Mục 3: nhạc không tự phát, không tải trước (preload="none", không phát ở lần chạm đầu)', /<audio id="bg-music" loop preload="none">/.test(html) && !/once:\s*true/.test(js) && !/startBgMusic/.test(js) && !/autoplay/.test(html));
 T('Nút nhạc: nhãn cố định "Nhạc nền", chỉ đổi aria-pressed (không đổi aria-label)', /id="music-toggle-btn"[^>]*aria-pressed="false"[^>]*aria-label="Nhạc nền"/.test(html) && /setAttribute\('aria-pressed'/.test(jsCode) && !/setAttribute\('aria-label'/.test(jsCode));
 T('Chữ mức không aria-live (thanh trượt đã có aria-valuetext)', !/id="current-status"[^>]*aria-live/.test(html));
-T('Dòng giải thích SĐT nói rõ máy giữ tạm khi mạng yếu (style guide mục 6)', /id="phone-note"[^>]*>[^<]*mạng yếu[^<]*giữ tạm/.test(htmlNoComment));
 T('Thanh trượt: aria-labelledby + aria-valuetext cập nhật theo mức', /id="emotion-range"[\s\S]{0,120}aria-labelledby="part1-title"/.test(html) && /setAttribute\('aria-valuetext'/.test(js));
 T('Mục 3: có :focus-visible trong CSS', /:focus-visible/.test(css));
 T('Mục 3: viewport cho phép phóng to (không user-scalable=no)', !/user-scalable=no|maximum-scale=1/.test(htmlNoComment), (html.match(/name="viewport" content="([^"]*)"/) || [])[1]);
@@ -196,6 +198,7 @@ INFO('Khóa localStorage script.js dùng', storageKeys.join(', '));
 T('Lưu trữ: mọi khóa có tiền tố "checkin_me_bau_" (trừ việc xóa "myCheckins" cũ của chính Check-in)', storageKeys.length > 0 && storageKeys.every(k => k.startsWith('checkin_me_bau_') || k === 'myCheckins'), storageKeys.join(', '));
 T('Lưu trữ: không đọc/ghi/xóa khóa của Nhật Ký Mẹ Bầu (musicMuted, myJourneys, user_…), không dùng sessionStorage/clear()', !/musicMuted|myJourneys|['"]user_/.test(jsCode) && !/sessionStorage|localStorage\.clear/.test(jsCode));
 T('Lưu trữ: localStorage bọc try/catch, không còn "myCheckins" lưu SĐT lâu dài', !/setItem\('myCheckins'/.test(js) && /try \{\s*const q = JSON\.parse\(localStorage\.getItem\(QUEUE_KEY\)/.test(js));
+T('Lưu trữ: hàng chờ dùng khóa mới checkin_me_bau_queue; khóa cũ checkin_me_bau_pending (giữ SĐT) bị xóa khi mở app', /const QUEUE_KEY = 'checkin_me_bau_queue';/.test(js) && /const OLD_QUEUE_KEY = 'checkin_me_bau_pending';/.test(js) && /localStorage\.removeItem\(OLD_QUEUE_KEY\)/.test(jsCode) && !/setItem\(OLD_QUEUE_KEY/.test(jsCode));
 
 /* ---- Admin (đã bỏ theo mục 4.1) ---- */
 h = findLines(htmlNoComment + '\n' + jsCode + '\n' + cssCode, /0967791552|admin|QUẢN TRỊ|fetchHistory|deleteCheckin/i);

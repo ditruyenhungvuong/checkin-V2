@@ -20,7 +20,7 @@ if %errorlevel% equ 0 (
     echo  3. Chep "Web app URL" dang https://script.google.com/macros/s/.../exec
     echo     dan vao giua hai dau nhay cua dong const GOOGLE_SCRIPT_URL trong script.js,
     echo     luu file roi chay lai upload.bat.
-    echo  Chi tiet: dau file google_apps_script.js, BUOC 5.
+    echo  Chi tiet: dau file google_apps_script.js, muc KHI CAN URL MOI.
     echo ========================================================
     echo.
     pause

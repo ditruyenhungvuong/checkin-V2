@@ -1,121 +1,85 @@
 /**
  * ============================================================
- *  GOOGLE APPS SCRIPT – CHECK-IN CẢM XÚC MẸ BẦU (bản an toàn, 29/10/2026)
+ *  GOOGLE APPS SCRIPT – CHECK-IN CẢM XÚC MẸ BẦU (bản Mã số bệnh nhân, 01/11/2026)
  *  (gốc: docs/style/apps-script-template.js của đội App Creator,
  *   kiểm dữ liệu theo apps/checkin-vao-ca/google_apps_script.js)
  * ============================================================
+ *  File này dán vào DỰ ÁN MỚI: Sheet "Check-in Cảm Xúc Mẹ Bầu – bản an toàn 30-10-2026"
+ *  (tài khoản bsngvanthong), bản triển khai có URL bắt đầu bằng AKfycbzfN8…
+ *  Dự án CŨ (URL AKfycbzSx6…, tài khoản khác) dùng file google_apps_script-du-an-cu.js.
+ *
  *  Chức năng:
  *   1) doPost : nhận một lượt check-in từ web, ghi 1 dòng vào tab CheckIn:
- *               A Thời gian (giờ máy chủ, giờ Việt Nam) · B Số điện thoại
+ *               A Thời gian (giờ Việt Nam) · B Mã số bệnh nhân
  *               C Phần 1: Mức cảm xúc · D Phần 2: Cảm xúc Capybara · E Mã phiên (ẩn)
- *               Cùng Mã phiên (và cùng SĐT) thì CẬP NHẬT dòng cũ, giữ nguyên giờ ở cột A
- *               → app gửi lại khi mạng chập chờn vẫn chỉ một dòng.
- *               App CŨ (bản đang chạy trên GitHub, không gửi Mã phiên) vẫn ghi được:
- *               mỗi lượt thêm một dòng, vẫn qua đủ các bước kiểm dữ liệu.
- *   2) doGet  : KHÔNG trả dữ liệu nữa. Mở URL chỉ thấy "public_read_disabled".
+ *               Cùng Mã phiên (và cùng Mã số bệnh nhân) thì CẬP NHẬT dòng cũ, giữ nguyên
+ *               giờ ở cột A → app gửi lại khi mạng chập chờn vẫn chỉ một dòng.
+ *   2) doGet  : KHÔNG trả dữ liệu. Mở URL chỉ thấy "public_read_disabled".
  *               Anh xem dữ liệu thẳng trên Google Sheet (anh là chủ file).
  *
- *  Vì sao phải thay bản cũ: bản cũ (a) cho BẤT KỲ AI có URL tải toàn bộ SĐT +
- *  cảm xúc của mọi mẹ bầu, (b) ghi thẳng chuỗi người lạ gửi vào Sheet, nên kẻ xấu
- *  chèn được công thức kiểu =IMPORTXML(...) để rút cả bảng khi anh mở file.
- *  URL cũ đã nằm công khai trên GitHub từ 9/2026.
+ *  Đổi ngày 01/11/2026 (anh Thông yêu cầu): ô "Số điện thoại" thành "Mã số bệnh nhân".
+ *   - Chỉ nhận CHỮ SỐ: bỏ khoảng trắng, dấu chấm, dấu gạch chị gõ lẫn; sau khi bỏ phải
+ *     còn 3–20 chữ số. Giữ nguyên số 0 ở đầu (ô ghi dạng văn bản).
+ *     Ví dụ nhận: "26012345" · "0012345" (ghi 0012345) · "260 123 45" (ghi 26012345).
+ *     Ví dụ từ chối: "12" · 21 chữ số · "HV123" · "=1+1" · để trống.
+ *   - Tên trường gửi lên đổi từ phone thành patientId (web đổi cùng lúc).
+ *   - Bỏ nhánh nhận app CŨ (không Mã phiên): dự án này chỉ nhận lượt từ app mới,
+ *     nên lượt nào thiếu Mã phiên đều bị từ chối.
+ *   - Tab đã có tiêu đề cũ "Số điện thoại" ở ô B1 thì tự đổi thành "Mã số bệnh nhân".
+ *     Các dòng ghi trước 01/11 vẫn giữ SĐT ở cột B; anh nhìn giờ ở cột A để phân biệt.
  *
  *  ------------------------------------------------------------
- *  HƯỚNG DẪN CÀI ĐẶT (anh Thông tự làm, khoảng 10 phút, làm đúng thứ tự)
+ *  HƯỚNG DẪN CÀI ĐẶT (anh Thông tự làm, khoảng 5 phút, làm đúng thứ tự)
  *  ------------------------------------------------------------
- *  Làm theo đúng thứ tự: bước 3 (cập nhật bản triển khai CŨ) đóng lỗ lộ dữ liệu
- *  NGAY HÔM NAY mà app đang chạy vẫn ghi được. Bước 5–6 làm khi đưa bản app mới lên.
+ *  BƯỚC 1 – Mở đúng dự án
+ *    1.1 Đăng nhập tài khoản bsngvanthong, mở Google Sheet
+ *        "Check-in Cảm Xúc Mẹ Bầu – bản an toàn 30-10-2026".
+ *    1.2 Menu Tiện ích mở rộng (Extensions) → Apps Script.
  *
- *  BƯỚC 1 – Chuẩn bị Sheet
- *    1.1 Mở Google Sheet đang nhận check-in của app.
- *    1.2 Tab đang có dữ liệu (thường tên "Trang tính1" hoặc "Sheet1"): nhấp đúp vào
- *        tên tab ở góc dưới, đổi thành  CheckIn  (viết liền, C và I hoa).
- *        Không đổi tên thì script tự tạo tab CheckIn mới, dữ liệu cũ vẫn nằm ở tab cũ.
- *    1.3 KIỂM TRA CÔNG THỨC BỊ CHÈN (bản cũ ghi thẳng chữ người lạ gửi vào cột A–D):
- *        - Bấm Ctrl+H (Tìm và thay thế). KHÔNG dùng Ctrl+F: ô bị chèn công thức chỉ
- *          hiện kết quả, không hiện dấu =, nên Ctrl+F không tìm ra.
- *        - Ô "Tìm": gõ  =   · "Tìm kiếm": Tất cả các trang tính
- *          · tick "Tìm kiếm trong cả công thức" (Also search within formulas) → bấm Tìm.
- *        - Xem mọi ô tìm thấy ở cột A, B, C, D. Ô có IMPORTXML, IMPORTDATA, IMPORTHTML,
- *          IMAGE, HYPERLINK, WEBSERVICE là dấu hiệu bị chèn: xóa ô đó (và báo đội).
+ *  BƯỚC 2 – Dán script và chạy thử
+ *    2.1 Trong file Code.gs, xóa HẾT code cũ, dán TOÀN BỘ file này vào.
+ *    2.2 Bấm biểu tượng đĩa mềm (Lưu) hoặc Ctrl+S.
+ *    2.3 Apps Script GIẤU các hàm có tên kết thúc bằng dấu gạch dưới (như test_) khỏi ô
+ *        chọn hàm, nên phải thêm một hàm tạm. Xuống CUỐI file, dán thêm đúng dòng:
+ *            function chayThu() { test_(); }
+ *        rồi Lưu.
+ *    2.4 Ô chọn hàm cạnh nút Chạy (Run) chọn  chayThu  rồi bấm Chạy.
+ *        Nếu Google hỏi quyền: Xem lại quyền → chọn tài khoản → Nâng cao (Advanced)
+ *        → Đi tới … (không an toàn) → Cho phép. Đây là script của chính anh nên cảnh báo
+ *        này là bình thường. Mở Nhật ký thực thi (Execution log): thấy các dòng
+ *        "test_: ..." và cuối cùng "test_: XONG" là được (dòng thử tự xóa).
+ *    2.5 XÓA dòng  function chayThu() { test_(); }  vừa thêm, rồi Lưu lại.
  *
- *  BƯỚC 2 – Dán script
- *    2.1 Trên Sheet: menu Tiện ích mở rộng (Extensions) → Apps Script.
- *    2.2 Trong file Code.gs, xóa HẾT code cũ, dán TOÀN BỘ file này vào.
- *    2.3 Bấm biểu tượng đĩa mềm (Lưu) hoặc Ctrl+S.
- *    2.4 (Nên làm) Ô chọn hàm cạnh nút Chạy/Run chọn  test_  rồi bấm Chạy.
- *        Lần đầu Google hỏi quyền: Xem lại quyền → chọn tài khoản → Nâng cao
- *        (Advanced) → Đi tới … (không an toàn) → Cho phép. Đây là script của chính
- *        anh nên cảnh báo này là bình thường. Mở Nhật ký thực thi (Execution log):
- *        thấy các dòng "test_: ..." và cuối cùng "test_: XONG" là được (dòng thử tự xóa).
- *
- *  BƯỚC 3 – CẬP NHẬT LUÔN BẢN TRIỂN KHAI CŨ (làm ngay, đóng lỗ lộ dữ liệu)
+ *  BƯỚC 3 – Cập nhật bản triển khai đang dùng (GIỮ NGUYÊN URL, không tạo triển khai mới)
  *    3.1 Nút Triển khai (Deploy) → Quản lý bản triển khai (Manage deployments).
- *    3.2 Chọn bản triển khai đang dùng (URL cũ, ID bắt đầu bằng AKfycbzSx6…)
+ *    3.2 Chọn bản triển khai có URL bắt đầu bằng AKfycbzfN8…
  *        → biểu tượng bút chì (Edit) → Phiên bản (Version): Phiên bản mới (New version)
  *        → Triển khai (Deploy).
- *    3.3 Mở URL CŨ trên trình duyệt → phải thấy
+ *    3.3 Mở URL đó trên trình duyệt → phải thấy
  *            {"result":"error","error":"public_read_disabled"}
- *        Từ lúc này không ai tải được bảng qua URL cũ nữa. App đang chạy trên web
- *        (bản cũ) vẫn gửi check-in bình thường vì script nhận cả lượt không có Mã phiên.
  *
- *  BƯỚC 4 – Kiểm tra sau bước 3
- *    4.1 LẶP LẠI bước 1.3 (Ctrl+H tìm công thức) một lần nữa: trong vài phút từ lúc
- *        quét tới lúc xong bước 3, code cũ vẫn ghi thẳng chữ người lạ gửi. Từ giờ code
- *        mới đã chặn công thức, nên đây là lần quét cuối.
- *    4.2 Mở app đang chạy, check-in thử một lượt → tab CheckIn thêm 1 dòng, cột A là
- *        giờ Việt Nam, cột E (ẩn) để trống (lượt của app cũ).
- *        App cũ không kiểm số điện thoại kỹ: số gõ lệch chuẩn (thiếu số 0, thừa số,
- *        kèm tên…) vẫn được ghi, cột B chỉ giữ CHỮ SỐ (xem QUY TẮC SĐT APP CŨ bên dưới).
+ *  BƯỚC 4 – Đưa bản web mới lên NGAY sau bước 3
+ *    Web và script đổi tên trường cùng lúc (phone → patientId). Từ lúc xong bước 3 tới lúc
+ *    web mới chạy (vài phút), lượt gửi từ bản web cũ bị từ chối (patient_id_invalid).
+ *    Nên làm bước 3–4 liền nhau, vào giờ ít người check-in.
+ *    4.1 Đưa app lên GitHub (./upload.sh trên Ubuntu hoặc upload.bat trên Surface).
+ *    4.2 Chờ vài phút, mở web, check-in thử một lượt với mã số có số 0 ở đầu
+ *        (ví dụ 0012345) → tab CheckIn thêm 1 dòng, cột B đúng 0012345, ô B1 là
+ *        "Mã số bệnh nhân". Xong thì xóa dòng thử đó.
  *
- *  BƯỚC 5 – TẠO BẢN TRIỂN KHAI MỚI (URL mới) cho bản app mới
- *    URL cũ đã nằm công khai trên GitHub từ 9/2026; ai có nó vẫn GỬI rác vào được
- *    (dù không đọc được nữa). Vì vậy bản app mới nên dùng URL mới.
- *    5.1 Triển khai (Deploy) → Triển khai mới (New deployment).
- *    5.2 Bánh răng cạnh "Chọn loại" → Ứng dụng web (Web app).
- *        Mô tả: ví dụ "ban an toan 29-10-2026".
- *        Thực thi với tư cách (Execute as): Tôi (Me).
- *        Ai có quyền truy cập (Who has access): Bất kỳ ai (Anyone).
- *    5.3 Bấm Triển khai. Chép dòng  URL ứng dụng web  (dạng https://script.google.com/macros/s/.../exec).
- *    5.4 Mở file script.js của app, thay URL trong dòng
- *            const GOOGLE_SCRIPT_URL = '...';
- *        bằng URL mới vừa chép (giữ nguyên dấu nháy đơn và dấu chấm phẩy).
- *        (upload.sh và upload.bat sẽ KHÔNG cho đẩy nếu script.js còn URL cũ.)
- *    5.5 Mở URL MỚI trên trình duyệt → thấy "public_read_disabled" là đúng.
- *    5.6 Đưa bản app mới lên GitHub (./upload.sh trên Ubuntu hoặc upload.bat trên Surface),
- *        chờ vài phút, mở web check-in thử một lượt.
+ *  LẦN SAU CHỈ SỬA CODE: dán code mới → Lưu → làm lại BƯỚC 3 (Phiên bản mới, giữ URL).
  *
- *    LƯU Ý giữa BƯỚC 5 và BƯỚC 6: lúc này có HAI bản triển khai cùng chạy (cũ và mới).
- *    Nếu sửa code Apps Script trong thời gian này thì phải cập nhật Phiên bản mới cho
- *    CẢ HAI (Quản lý bản triển khai → từng bản → bút chì → Phiên bản mới → Triển khai),
- *    không thì bản cũ vẫn chạy code cũ hơn.
- *
- *  BƯỚC 6 – Tắt URL cũ (CHỈ SAU khi bước 5.6 xong và web đã chạy bằng URL mới)
- *    6.1 Triển khai → Quản lý bản triển khai → chọn bản CŨ → Lưu trữ (Archive).
- *        Làm sớm hơn thì app trên web (còn URL cũ) sẽ gửi vào URL đã tắt và mất lượt.
- *
- *  LẦN SAU CHỈ SỬA CODE (không cần URL mới): dán code mới → Lưu → Triển khai →
- *    Quản lý bản triển khai → bút chì → Phiên bản: Phiên bản mới → Triển khai.
- *    (Nếu chưa làm BƯỚC 6 thì làm việc này cho CẢ HAI bản triển khai.)
- *
- *  QUY TẮC SĐT APP CŨ (chỉ lượt KHÔNG có Mã phiên, tức app bản 9/2026 còn chạy):
- *    - Đúng chuẩn Việt Nam (như app mới) → ghi dạng chuẩn, ví dụ 0912345678.
- *    - Sai chuẩn nhưng chuỗi ≤ 30 ký tự và có ≥ 9 chữ số → VẪN GHI để không mất lượt;
- *      cột B chỉ giữ chữ số: bỏ hết dấu cách, chấm, gạch, chữ, dấu +.
- *        • Bắt đầu bằng "+84" hoặc "0084" mà phần sau đúng chuẩn → đổi về 0xxxxxxxxx.
- *        • Bắt đầu bằng "+" (mã nước khác) → thay "+" bằng "00" (ví dụ +1 202… → 001202…).
- *      Ví dụ: "912345678" → 912345678 · "0912345678 chi Lan" → 0912345678 ·
- *             "0084912345678" → 0912345678 · "01234567890" → 01234567890.
- *      Số không bắt đầu bằng 0, hoặc không đủ 10–11 số, là số gõ lệch: anh lọc cột B để xem.
- *    - Ít hơn 9 chữ số (ví dụ "=1+1+1+1+1") → từ chối.
- *    Lượt CÓ Mã phiên (app mới) vẫn phải đúng chuẩn Việt Nam, vì app mới đã báo lỗi ngay trên ô.
+ *  KHI CẦN URL MỚI (ví dụ URL bị lộ cho người lạ gửi rác): Triển khai → Triển khai mới
+ *    → bánh răng → Ứng dụng web; Thực thi với tư cách: Tôi; Ai có quyền truy cập: Bất kỳ ai
+ *    → Triển khai → chép URL, dán vào dòng  const GOOGLE_SCRIPT_URL = '...';  trong script.js,
+ *    đưa web lên, rồi mới Lưu trữ (Archive) bản triển khai cũ.
  *
  *  Phía web gửi bằng:
  *    fetch(URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) })
- *    payload = { sessionId, ageMs, phone, level, part1, part2 }
+ *    payload = { sessionId, ageMs, patientId, level, part1, part2 }
  *    ageMs = số mili-giây từ lúc chị bấm tới lúc gửi (đo trên cùng đồng hồ điện thoại,
  *    nên đồng hồ máy chị chạy sai cũng không ảnh hưởng). Máy chủ ghi giờ = giờ nhận − ageMs.
- *    (app cũ gửi { created_at, phone, part1, part2 }: vẫn nhận, giờ lấy ở máy chủ)
+ *    part1 client gửi bị bỏ: máy chủ tự ghép "mức - nhãn" từ level.
  *  (Content-Type text/plain để tránh preflight CORS.)
  * ============================================================
  */
@@ -125,17 +89,18 @@
 // Tên tab ghi check-in. Đổi ở đây nếu anh đặt tên khác.
 var SHEET_NAME = 'CheckIn';
 
-// Cột trong tab. Khóa (key) trùng tên trường trong payload.
-// 4 cột đầu giữ đúng như bản cũ để dữ liệu cũ và mới nằm chung bảng; cột E là cột kỹ thuật, tự ẩn.
+// Cột trong tab. Khóa (key) trùng tên trường trong payload. Cột E là cột kỹ thuật, tự ẩn.
 var COLUMNS = [
   { key: 'created_at', header: 'Thời gian' },
-  { key: 'phone',      header: 'Số điện thoại' },
+  { key: 'patientId',  header: 'Mã số bệnh nhân' },
   { key: 'part1',      header: 'Phần 1: Mức cảm xúc' },
   { key: 'part2',      header: 'Phần 2: Cảm xúc Capybara' },
   { key: 'sessionId',  header: 'Mã phiên' }
 ];
 var SESSION_KEY = 'sessionId';
+var ID_COL = 2;                   // cột B
 var SESSION_COL = 5;              // cột E, ẩn
+var OLD_ID_HEADER = 'Số điện thoại'; // tiêu đề B1 trước 01/11/2026, tự đổi sang tiêu đề mới
 
 // 10 nhãn mức, PHẢI trùng emotionLevels[n].text trong script.js. Index 0 bỏ trống.
 // Server tự ghép "mức - nhãn" từ số mức, KHÔNG dùng chuỗi client gửi.
@@ -145,12 +110,10 @@ var LEVEL_TEXTS = ['', 'Tuyệt vọng', 'Rất tồi tệ', 'Tồi tệ', 'Kém
 // 6 nhãn thẻ Capybara, PHẢI trùng EMOTIONS trong script.js. Chỉ nhận đúng một trong 6 chuỗi này.
 var EMOTION_LABELS = ['Vui vẻ', 'Buồn', 'Lo lắng', 'Tức giận', 'Hoảng hốt', 'Khó chịu'];
 
-var MAX_BODY_LENGTH  = 2000;      // payload thật chỉ ~150 ký tự; dài hơn là rác
-var PHONE_MAX_LENGTH = 20;        // trước khi chuẩn hóa (app mới)
-var LEGACY_PHONE_MAX_LENGTH = 30; // app cũ không giới hạn ô nhập; quá 30 ký tự là rác
-var LEGACY_PHONE_MIN_DIGITS = 9;  // app cũ đòi ≥ 9 ký tự; ít hơn 9 chữ số thì không phải SĐT
+var MAX_BODY_LENGTH   = 2000;     // payload thật chỉ ~150 ký tự; dài hơn là rác
+var ID_RAW_MAX_LENGTH = 40;       // trước khi bỏ khoảng trắng/chấm/gạch (ô nhập trên web tối đa 30)
 // Mã phiên: 8–40 ký tự chữ/số/gạch nối, KHÔNG bắt đầu bằng gạch (tránh bị safeText_ thêm dấu nháy)
-var SESSION_RE       = /^[0-9A-Za-z][0-9A-Za-z-]{7,39}$/;
+var SESSION_RE        = /^[0-9A-Za-z][0-9A-Za-z-]{7,39}$/;
 
 // Độ trễ từ lúc chị bấm tới lúc gửi (ageMs, mili-giây): lượt gửi lại sau khi mất mạng
 // vẫn ghi đúng giờ check-in. Chỉ nhận số nguyên 0 … 8 ngày (hàng chờ trên máy giữ 7 ngày).
@@ -162,15 +125,13 @@ var TIME_ZONE = 'Asia/Ho_Chi_Minh';
 /* ===== Tiện ích chung ===== */
 
 /**
- * Chuẩn hóa SĐT Việt Nam: bỏ khoảng trắng, chấm, gạch, ngoặc; +84 / 84 đầu → 0.
- * Hợp lệ: di động 10 số 03/05/07/08/09, hoặc cố định 11 số 02x. Sai → ''.
- * VIẾT GIỐNG HỆT normalizePhone() trong script.js.
+ * Chuẩn hóa Mã số bệnh nhân: bỏ khoảng trắng, dấu chấm, dấu gạch;
+ * sau khi bỏ phải còn 3–20 CHỮ SỐ (giữ nguyên số 0 ở đầu). Sai → ''.
+ * VIẾT GIỐNG HỆT normalizePatientId() trong script.js.
  */
-function normalizePhone_(raw) {
-  var s = String(raw == null ? '' : raw).trim().replace(/[\s.\-()]/g, '');
-  if (/^\+84/.test(s)) s = '0' + s.slice(3);
-  else if (/^84\d{9,10}$/.test(s)) s = '0' + s.slice(2);
-  return /^(0[35789]\d{8}|02\d{9})$/.test(s) ? s : '';
+function normalizePatientId_(raw) {
+  var s = String(raw == null ? '' : raw).replace(/[\s.\-]/g, '');
+  return /^\d{3,20}$/.test(s) ? s : '';
 }
 
 /** Giờ dạng HH:mm:ss dd/MM/yyyy theo giờ Việt Nam (cùng định dạng dữ liệu cũ). */
@@ -197,7 +158,7 @@ function safeText_(s) {
   return t;
 }
 
-/** Trả JSON. Không còn JSONP: web chỉ gửi POST, không đọc gì qua GET. */
+/** Trả JSON. Không có JSONP: web chỉ gửi POST, không đọc gì qua GET. */
 function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
@@ -212,9 +173,16 @@ function sheet_() {
   return sh;
 }
 
+/** Đặt tiêu đề một ô ở hàng 1, tô hồng như hàng tiêu đề. */
+function setHeaderCell_(sheet, col) {
+  sheet.getRange(1, col).setValue(COLUMNS[col - 1].header)
+       .setFontWeight('bold').setBackground('#F8BBD0').setFontColor('#880E4F');
+}
+
 /**
  * Tab trống: tạo tiêu đề tô hồng, đóng băng hàng 1, ẩn cột E.
- * Tab đã có dữ liệu từ bản cũ (4 cột): bổ sung tiêu đề E "Mã phiên" và ẩn, không đụng A–D.
+ * Tab đã có dữ liệu: B1 còn "Số điện thoại" (hoặc trống) thì đổi thành "Mã số bệnh nhân";
+ * thiếu tiêu đề E "Mã phiên" thì bổ sung và ẩn. Không đụng các dòng dữ liệu.
  */
 function ensureHeader_(sheet) {
   if (sheet.getLastRow() === 0) {
@@ -225,10 +193,10 @@ function ensureHeader_(sheet) {
     sheet.hideColumns(SESSION_COL);
     return;
   }
-  var eHeader = COLUMNS[SESSION_COL - 1].header;
-  if (sheet.getRange(1, SESSION_COL).getValue() !== eHeader) {
-    sheet.getRange(1, SESSION_COL).setValue(eHeader)
-         .setFontWeight('bold').setBackground('#F8BBD0').setFontColor('#880E4F');
+  var b1 = String(sheet.getRange(1, ID_COL).getValue());
+  if (b1 === OLD_ID_HEADER || b1 === '') setHeaderCell_(sheet, ID_COL);
+  if (sheet.getRange(1, SESSION_COL).getValue() !== COLUMNS[SESSION_COL - 1].header) {
+    setHeaderCell_(sheet, SESSION_COL);
     sheet.hideColumns(SESSION_COL);
   }
 }
@@ -270,64 +238,27 @@ function createdAt_(ageMs) {
 }
 
 /**
- * SĐT của lượt app CŨ (không Mã phiên) khi không đúng chuẩn Việt Nam: vẫn nhận để không mất lượt.
- * Trả chuỗi CHỈ GỒM CHỮ SỐ, hoặc '' nếu là rác. Quy tắc ghi ở đầu file (QUY TẮC SĐT APP CŨ).
- */
-function legacyPhone_(raw) {
-  var t = String(raw).trim();
-  if (t.length > LEGACY_PHONE_MAX_LENGTH) return '';
-  var digits = t.replace(/\D/g, '');
-  if (digits.length < LEGACY_PHONE_MIN_DIGITS) return '';
-  // 0084… → thử chuẩn Việt Nam
-  if (/^0084/.test(digits)) {
-    var vn = normalizePhone_('0' + digits.slice(4));
-    if (vn) return vn;
-  }
-  // "+" đầu (mã nước) → "00" để vẫn chỉ là chữ số mà không mất thông tin
-  if (t.charAt(0) === '+') digits = '00' + digits;
-  return digits;
-}
-
-/**
  * Kiểm payload. Trả mã lỗi ngắn
- *   session_invalid | phone_invalid | level_invalid | emotion_required | emotion_invalid
- * hoặc '' nếu hợp lệ, kèm out = { created_at, phone, part1, part2, sessionId } đã làm sạch.
- * - Thiếu Mã phiên = lượt của app cũ: vẫn kiểm đủ, out.sessionId = '' (doPost luôn thêm dòng mới).
- * - Có Mã phiên thì phải đúng SESSION_RE.
- * - SĐT: app mới phải đúng chuẩn Việt Nam; app cũ sai chuẩn thì qua legacyPhone_ (chỉ chữ số).
- * - created_at client gửi (app cũ) bị bỏ: giờ = giờ máy chủ − ageMs hợp lệ, hoặc giờ máy chủ.
+ *   session_invalid | patient_id_invalid | level_invalid | emotion_required | emotion_invalid
+ * hoặc '' nếu hợp lệ, kèm out = { created_at, patientId, part1, part2, sessionId } đã làm sạch.
+ * - Mã phiên BẮT BUỘC, đúng SESSION_RE (dự án này chỉ nhận lượt từ app mới).
+ * - Mã số bệnh nhân: chuỗi, ≤ 40 ký tự, sau khi bỏ khoảng trắng/chấm/gạch còn 3–20 chữ số.
+ * - Mức: trường level bắt buộc (không đọc số từ part1 nữa).
+ * - created_at client gửi (nếu có) bị bỏ: giờ = giờ máy chủ − ageMs hợp lệ, hoặc giờ máy chủ.
  * Mọi ô ghi vào Sheet đều đến từ whitelist hoặc regex, nên không chuỗi nào bắt đầu
  * bằng = + - @ lọt được; safeText_ ở doPost là lớp phòng thủ thứ hai.
  */
 function validateCheckin_(data, out) {
-  var sid = '';
-  if (present_(data[SESSION_KEY])) {
-    if (typeof data[SESSION_KEY] !== 'string') return 'session_invalid';
-    sid = data[SESSION_KEY].trim();
-    if (!SESSION_RE.test(sid)) return 'session_invalid';
-  }
+  var rawSid = data[SESSION_KEY];
+  if (typeof rawSid !== 'string') return 'session_invalid';
+  var sid = rawSid.trim();
+  if (!SESSION_RE.test(sid)) return 'session_invalid';
 
-  if (typeof data.phone !== 'string' && typeof data.phone !== 'number') return 'phone_invalid';
-  var rawPhone = String(data.phone);
-  var phone;
-  if (sid) {
-    // App mới: chuẩn Việt Nam chặt
-    if (rawPhone.length > PHONE_MAX_LENGTH) return 'phone_invalid';
-    phone = normalizePhone_(rawPhone);
-  } else {
-    // App cũ: chuẩn thì ghi chuẩn, lệch chuẩn mà đủ chữ số thì ghi chữ số (không mất lượt)
-    phone = (rawPhone.length <= PHONE_MAX_LENGTH && normalizePhone_(rawPhone)) || legacyPhone_(rawPhone);
-  }
-  if (!phone) return 'phone_invalid';
+  if (typeof data.patientId !== 'string' || data.patientId.length > ID_RAW_MAX_LENGTH) return 'patient_id_invalid';
+  var pid = normalizePatientId_(data.patientId);
+  if (!pid) return 'patient_id_invalid';
 
-  // Mức: bản mới gửi level; app cũ chỉ gửi part1 "7 - Tốt" → đọc số đầu
-  var lv;
-  if (present_(data.level)) {
-    lv = parseLevel_(data.level);
-  } else {
-    var m = /^(\d{1,2}) - /.exec(typeof data.part1 === 'string' ? data.part1 : '');
-    lv = m ? parseLevel_(m[1]) : 0;
-  }
+  var lv = parseLevel_(data.level);
   if (!lv) return 'level_invalid';
 
   if (!present_(data.part2)) return 'emotion_required';
@@ -335,7 +266,7 @@ function validateCheckin_(data, out) {
   if (EMOTION_LABELS.indexOf(emo) < 0) return 'emotion_invalid';
 
   out.created_at = createdAt_(data.ageMs);
-  out.phone = phone;
+  out.patientId = pid;
   out.part1 = lv + ' - ' + LEVEL_TEXTS[lv];       // ghép lại từ bảng, không dùng chữ client gửi
   out.part2 = emo;
   out.sessionId = sid;
@@ -358,6 +289,7 @@ function doPost(e) {
     catch (parseErr) { return json_({ result: 'error', error: 'bad_json' }); }
     if (!data || typeof data !== 'object' || Array.isArray(data)) return json_({ result: 'error', error: 'bad_json' });
 
+    // Kiểm trước rồi mới khóa: payload xấu không chiếm khóa ghi
     var clean = {};
     var invalid = validateCheckin_(data, clean);
     if (invalid) return json_({ result: 'error', error: invalid });
@@ -369,20 +301,19 @@ function doPost(e) {
     ensureHeader_(sheet);
     var row = COLUMNS.map(function (c) { return safeText_(clean[c.key]); });
 
-    // Không có Mã phiên (app cũ) → luôn thêm dòng mới, không tìm để cập nhật
-    var existing = clean.sessionId ? findSessionRow_(sheet, clean.sessionId) : -1;
+    var existing = findSessionRow_(sheet, clean.sessionId);
     if (existing > 0) {
-      // Cùng Mã phiên mà khác SĐT: không cho ghi đè dòng của người khác
-      var oldPhone = String(sheet.getRange(existing, 2).getValue()).replace(/^'/, '');
-      if (oldPhone !== clean.phone) return json_({ result: 'error', error: 'session_conflict' });
+      // Cùng Mã phiên mà khác Mã số bệnh nhân: không cho ghi đè dòng của người khác
+      var oldId = String(sheet.getRange(existing, ID_COL).getValue()).replace(/^'/, '');
+      if (oldId !== clean.patientId) return json_({ result: 'error', error: 'session_conflict' });
       // Cập nhật B–E, GIỮ cột A (giờ check-in lần đầu)
       var upd = sheet.getRange(existing, 2, 1, COLUMNS.length - 1);
       upd.setNumberFormat('@');
       upd.setValues([row.slice(1)]);
       return json_({ result: 'success', action: 'updated' });
     }
-    // Văn bản thuần cho dòng này: giữ số 0 đầu của SĐT, giờ không bị đổi thành ngày kiểu Mỹ.
-    // Chỉ đặt cho dòng đang ghi, không đụng dòng cũ.
+    // Văn bản thuần cho dòng này: giữ số 0 đầu của Mã số bệnh nhân, giờ không bị đổi thành
+    // ngày kiểu Mỹ. Chỉ đặt cho dòng đang ghi, không đụng dòng cũ.
     var range = sheet.getRange(sheet.getLastRow() + 1, 1, 1, COLUMNS.length);
     range.setNumberFormat('@');
     range.setValues([row]);
@@ -396,7 +327,7 @@ function doPost(e) {
   }
 }
 
-/** ĐỌC DỮ LIỆU QUA URL: ĐÃ TẮT. Không có cách nào tải SĐT/cảm xúc qua đường link. */
+/** ĐỌC DỮ LIỆU QUA URL: ĐÃ TẮT. Không có cách nào tải mã số/cảm xúc qua đường link. */
 function doGet() {
   return json_({ result: 'error', error: 'public_read_disabled' });
 }
@@ -404,34 +335,32 @@ function doGet() {
 /* ===== Chạy thử trong editor ===== */
 
 /**
- * Chọn hàm test_ trong editor rồi bấm Chạy. Xem Nhật ký thực thi.
- * Ghi 1 dòng thử, ghi lại cùng Mã phiên (phải "updated"), thử vài payload sai, rồi xóa dòng thử.
+ * Chạy qua hàm tạm chayThu (xem BƯỚC 2.3–2.5 ở đầu file), rồi xem Nhật ký thực thi.
+ * Ghi 1 dòng thử (mã số có số 0 đầu), ghi lại cùng Mã phiên (phải "updated"), thử vài payload
+ * sai, rồi xóa dòng thử.
  */
 function test_() {
   var sid = 'test-' + new Date().getTime();
-  var ok = { sessionId: sid, phone: '0912 345 678', level: 5, part1: '5 - Bình thường (Ổn)', part2: 'Vui vẻ' };
+  var ok = { sessionId: sid, patientId: '0012 345', level: 5, part1: '5 - Bình thường (Ổn)', part2: 'Vui vẻ' };
   var post = function (o) { return JSON.parse(doPost({ postData: { contents: JSON.stringify(o) } }).getContent()); };
 
   Logger.log('test_: POST lần 1 → ' + JSON.stringify(post(ok)));
   var r2 = post(ok);
   Logger.log('test_: POST lần 2 cùng Mã phiên → ' + JSON.stringify(r2) + (r2.action === 'updated' ? ' (đúng: không thêm dòng)' : ' (SAI)'));
-  var legacy = post({ created_at: '08:00:00 01/10/2026', phone: '0912345678', part1: '5 - Bình thường (Ổn)', part2: 'Vui vẻ' });
-  Logger.log('test_: lượt kiểu app cũ (không Mã phiên) → ' + JSON.stringify(legacy) + (legacy.action === 'inserted' ? ' (đúng)' : ' (SAI)'));
-  Logger.log('test_: phone "=1+1" → ' + JSON.stringify(post({ sessionId: sid, phone: '=1+1', level: 5, part2: 'Vui vẻ' })));
-  Logger.log('test_: level 11 → ' + JSON.stringify(post({ sessionId: sid, phone: '0912345678', level: 11, part2: 'Vui vẻ' })));
-  Logger.log('test_: cảm xúc lạ → ' + JSON.stringify(post({ sessionId: sid, phone: '0912345678', level: 5, part2: '=IMPORTXML("x";"//a")' })));
-  Logger.log('test_: GET → ' + doGet({ parameter: {} }).getContent());
-
   var sheet = sheet_();
   var rowNo = findSessionRow_(sheet, sid);
+  var b = rowNo > 0 ? String(sheet.getRange(rowNo, ID_COL).getValue()) : '';
+  Logger.log('test_: cột B của dòng thử = "' + b + '"' + (b === '0012345' ? ' (đúng: giữ số 0 đầu)' : ' (SAI)'));
+  Logger.log('test_: ô B1 = "' + sheet.getRange(1, ID_COL).getValue() + '"');
+  Logger.log('test_: mã "12" → ' + JSON.stringify(post({ sessionId: sid, patientId: '12', level: 5, part2: 'Vui vẻ' })));
+  Logger.log('test_: mã "HV123" → ' + JSON.stringify(post({ sessionId: sid, patientId: 'HV123', level: 5, part2: 'Vui vẻ' })));
+  Logger.log('test_: mã "=1+1" → ' + JSON.stringify(post({ sessionId: sid, patientId: '=1+1', level: 5, part2: 'Vui vẻ' })));
+  Logger.log('test_: thiếu Mã phiên (kiểu app cũ) → ' + JSON.stringify(post({ patientId: '26012345', level: 5, part2: 'Vui vẻ' })));
+  Logger.log('test_: level 11 → ' + JSON.stringify(post({ sessionId: sid, patientId: '26012345', level: 11, part2: 'Vui vẻ' })));
+  Logger.log('test_: cảm xúc lạ → ' + JSON.stringify(post({ sessionId: sid, patientId: '26012345', level: 5, part2: '=IMPORTXML("x";"//a")' })));
+  Logger.log('test_: GET → ' + doGet({ parameter: {} }).getContent());
+
+  rowNo = findSessionRow_(sheet, sid);
   if (rowNo > 0) { sheet.deleteRow(rowNo); Logger.log('test_: đã xóa dòng thử số ' + rowNo); }
-  // Dòng thử kiểu app cũ (cột E trống) là dòng cuối nếu ghi thành công
-  if (legacy.result === 'success') {
-    var last = sheet.getLastRow();
-    var r = sheet.getRange(last, 1, 1, COLUMNS.length).getValues()[0];
-    if (String(r[1]) === '0912345678' && String(r[4]) === '' && String(r[3]) === 'Vui vẻ') {
-      sheet.deleteRow(last); Logger.log('test_: đã xóa dòng thử kiểu app cũ số ' + last);
-    }
-  }
   Logger.log('test_: XONG');
 }

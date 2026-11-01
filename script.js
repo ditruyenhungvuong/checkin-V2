@@ -16,8 +16,11 @@ let SEND_TIMEOUT_MS = 15000;
 // LƯU Ý localStorage: mọi app ở ditruyenhungvuong.github.io/<repo>/ dùng CHUNG một localStorage
 // (cùng origin). Khóa của app này luôn có tiền tố "checkin_me_bau_". KHÔNG đọc/ghi/xóa khóa
 // của app khác: Nhật Ký Mẹ Bầu dùng 'musicMuted', 'myJourneys', 'user_<sđt>'.
-// Hàng chờ gửi lại: chỉ giữ lượt CHƯA gửi được, gửi xong là xóa ngay
-const QUEUE_KEY = 'checkin_me_bau_pending';
+// Hàng chờ gửi lại: chỉ giữ lượt CHƯA gửi được, gửi xong là xóa ngay.
+// Từ 01/11/2026 app nhận Mã số bệnh nhân thay SĐT nên đổi sang khóa mới; khóa cũ
+// 'checkin_me_bau_pending' (còn giữ SĐT, Apps Script mới cũng không nhận nữa) bị xóa khi mở app.
+const QUEUE_KEY = 'checkin_me_bau_queue';
+const OLD_QUEUE_KEY = 'checkin_me_bau_pending';
 const QUEUE_MAX = 20;
 const QUEUE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -51,13 +54,13 @@ const EMOTIONS = ['Vui vẻ', 'Buồn', 'Lo lắng', 'Tức giận', 'Hoảng h�
 
 // Lời nhắc tiến độ dưới nút Hoàn thành
 const HINTS = {
-    both:     "💡 Chị nhập số điện thoại và chạm chọn 1 bé Capybara là xong nhé.",
-    phone:    "💡 Chị nhập số điện thoại ở trên giúp mình nhé.",
-    phoneBad: "💡 Số điện thoại chưa đúng, chị xem lại giúp mình nhé.",
+    both:     "💡 Chị nhập mã số bệnh nhân và chạm chọn 1 bé Capybara là xong nhé.",
+    id:       "💡 Chị nhập mã số bệnh nhân ở trên giúp mình nhé.",
+    idBad:    "💡 Mã số bệnh nhân chưa đúng, chị xem lại giúp mình nhé.",
     card:     "💡 Chị chạm chọn 1 bé Capybara ở Phần 2 nhé.",
     done:     "✨ Xong rồi, chị chạm nút Hoàn thành nhé!"
 };
-const PHONE_ERROR = "Số điện thoại chưa đúng định dạng Việt Nam (ví dụ 0912 345 678).";
+const ID_ERROR = "Chị nhập mã số bệnh nhân (chỉ gồm chữ số, ví dụ 26012345) nhé.";
 const BTN_IDLE = "Hoàn thành Check-in →";
 const BTN_SENDING = "Đang lưu Check-in…";
 
@@ -73,25 +76,25 @@ const reduceMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-r
 
 
 // ============================================================
-// 2. TIỆN ÍCH: SĐT, TOAST, LƯU TRỮ AN TOÀN
+// 2. TIỆN ÍCH: MÃ SỐ BỆNH NHÂN, TOAST, LƯU TRỮ AN TOÀN
 // ============================================================
 
 /**
- * Chuẩn hóa SĐT Việt Nam: bỏ khoảng trắng, chấm, gạch, ngoặc; +84 / 84 đầu → 0.
- * Hợp lệ: di động 10 số 03/05/07/08/09, hoặc cố định 11 số 02x. Sai → ''.
- * VIẾT GIỐNG HỆT normalizePhone_() trong google_apps_script.js.
+ * Chuẩn hóa Mã số bệnh nhân: bỏ khoảng trắng, dấu chấm, dấu gạch chị gõ lẫn;
+ * sau khi bỏ phải còn 3–20 CHỮ SỐ (giữ nguyên số 0 ở đầu). Sai → ''.
+ * VIẾT GIỐNG HỆT normalizePatientId_() trong google_apps_script.js.
  */
-function normalizePhone(raw) {
-    let s = String(raw == null ? '' : raw).trim().replace(/[\s.\-()]/g, '');
-    if (/^\+84/.test(s)) s = '0' + s.slice(3);
-    else if (/^84\d{9,10}$/.test(s)) s = '0' + s.slice(2);
-    return /^(0[35789]\d{8}|02\d{9})$/.test(s) ? s : '';
+function normalizePatientId(raw) {
+    const s = String(raw == null ? '' : raw).replace(/[\s.\-]/g, '');
+    return /^\d{3,20}$/.test(s) ? s : '';
 }
 
-// Che SĐT khi hiện trên màn hình: 0912345678 → "0912 ••• 678"
-function maskPhone(phone) {
-    const p = String(phone || '');
-    return p.length >= 7 ? p.slice(0, 4) + ' ••• ' + p.slice(-3) : '•••';
+// Che mã số khi hiện trên màn hình (máy có thể dùng chung): 26012345 → "26 ••• 345"
+function maskPatientId(id) {
+    const p = String(id || '');
+    if (p.length >= 8) return p.slice(0, 2) + ' ••• ' + p.slice(-3);
+    if (p.length >= 5) return '••• ' + p.slice(-2);
+    return '•••';
 }
 
 function toast(msg) {
@@ -349,21 +352,22 @@ function selectCapybara(emotionName, cardEl) {
 // 7. KIỂM TRA ĐIỀU KIỆN & HIỂN THỊ NÚT HOÀN THÀNH
 // ============================================================
 
-function phoneState() {
-    const input = $('input-phone');
+function idState() {
+    const input = $('input-patient-id');
     const raw = input ? input.value.trim() : '';
-    const phone = normalizePhone(raw);
+    const id = normalizePatientId(raw);
     const digits = raw.replace(/\D/g, '').length;
-    return { raw, phone, digits };
+    return { raw, id, digits };
 }
 
-// Hiện lỗi mềm dưới ô SĐT: chỉ khi chị đã gõ đủ dài hoặc rời ô (không mắng khi đang gõ dở)
-function showPhoneError(force) {
-    const { raw, phone, digits } = phoneState();
-    const errEl = $('phone-error');
-    const input = $('input-phone');
-    const bad = raw !== '' && !phone && (force || digits >= 10 || /[^\d\s.\-()+]/.test(raw));
-    if (errEl) errEl.textContent = bad ? PHONE_ERROR : '';
+// Hiện lỗi mềm dưới ô mã số: khi chị rời ô, gõ ký tự không phải số, hoặc quá 20 số
+// (không mắng khi đang gõ dở)
+function showIdError(force) {
+    const { raw, id, digits } = idState();
+    const errEl = $('patient-id-error');
+    const input = $('input-patient-id');
+    const bad = raw !== '' && !id && (force || digits > 20 || /[^\d\s.\-]/.test(raw));
+    if (errEl) errEl.textContent = bad ? ID_ERROR : '';
     if (input) {
         if (bad) input.setAttribute('aria-invalid', 'true');
         else input.removeAttribute('aria-invalid');
@@ -372,31 +376,31 @@ function showPhoneError(force) {
 }
 
 function onInputChange() {
-    showPhoneError(false);
+    showIdError(false);
     checkFormCompletion();
 }
 
 function checkFormCompletion() {
-    const { phone } = phoneState();
-    const hasPhone = !!phone;
+    const { id } = idState();
+    const hasId = !!id;
     // Chỉ nói "chưa đúng" khi lỗi mềm dưới ô đang hiện (không nhắc khi chị đang gõ dở)
-    const input = $('input-phone');
-    const phoneBad = !!(input && input.getAttribute('aria-invalid') === 'true');
+    const input = $('input-patient-id');
+    const idBad = !!(input && input.getAttribute('aria-invalid') === 'true');
     const hasPart2 = Boolean(currentCheckin.part2_capybara);
 
     const btnSubmit = $('btn-submit');
     const hintEl = $('submit-hint');
     if (!btnSubmit || isSending) return;
 
-    const ready = hasPhone && hasPart2;
+    const ready = hasId && hasPart2;
     btnSubmit.classList.toggle('ready', ready);
     btnSubmit.disabled = !ready;
     if (!hintEl) return;
     hintEl.classList.toggle('done', ready);
     if (ready) hintEl.textContent = HINTS.done;
-    else if (!hasPhone && phoneBad) hintEl.textContent = HINTS.phoneBad;
-    else if (!hasPhone && !hasPart2) hintEl.textContent = HINTS.both;
-    else if (!hasPhone) hintEl.textContent = HINTS.phone;
+    else if (!hasId && idBad) hintEl.textContent = HINTS.idBad;
+    else if (!hasId && !hasPart2) hintEl.textContent = HINTS.both;
+    else if (!hasId) hintEl.textContent = HINTS.id;
     else hintEl.textContent = HINTS.card;
 }
 
@@ -418,7 +422,7 @@ function sendCheckin(payload) {
     // máy chủ ghi giờ = giờ nhận − ageMs, nên đồng hồ điện thoại chạy sai cũng không lệch ngày.
     const body = {
         sessionId: payload.sessionId,
-        phone: payload.phone,
+        patientId: payload.patientId,
         level: payload.level,
         part1: payload.part1,
         part2: payload.part2
@@ -466,13 +470,13 @@ function flushQueue() {
 
 function submitCheckin() {
     if (isSending) return;
-    const phoneInput = $('input-phone');
-    const { phone } = phoneState();
+    const idInput = $('input-patient-id');
+    const { id } = idState();
 
-    if (!phone) {
-        showPhoneError(true);
-        toast(PHONE_ERROR);
-        if (phoneInput) phoneInput.focus();
+    if (!id) {
+        showIdError(true);
+        toast(ID_ERROR);
+        if (idInput) idInput.focus();
         return;
     }
     if (!currentCheckin.part2_capybara) {
@@ -488,7 +492,7 @@ function submitCheckin() {
     const payload = {
         sessionId: currentCheckin.sessionId,
         tappedAt: Date.now(),
-        phone: phone,
+        patientId: id,
         level: level,
         part1: `${level} - ${currentCheckin.part1_text}`,
         part2: currentCheckin.part2_capybara
@@ -508,7 +512,7 @@ function submitCheckin() {
     // Bắn pháo hoa ăn mừng (tự tắt khi máy bật giảm chuyển động)
     launchFireworks();
 
-    renderSummary({ phone: payload.phone, part1: payload.part1, part2: payload.part2 });
+    renderSummary({ patientId: payload.patientId, part1: payload.part1, part2: payload.part2 });
     renderQuote(level);
 
     // Chuyển sang màn hình cảm ơn với dấu tick xanh lá
@@ -527,7 +531,7 @@ function submitCheckin() {
     }, 400);
 }
 
-/* Tóm tắt trang cảm ơn: dựng bằng textContent (không innerHTML) → chuỗi lạ không thành HTML; SĐT luôn che */
+/* Tóm tắt trang cảm ơn: dựng bằng textContent (không innerHTML) → chuỗi lạ không thành HTML; mã số luôn che */
 function renderSummary(info) {
     const summaryEl = $('success-summary');
     if (!summaryEl) return;
@@ -536,7 +540,7 @@ function renderSummary(info) {
     head.textContent = 'Mình đã ghi lại:';
     summaryEl.appendChild(head);
     [
-        ['📱 Số điện thoại: ', maskPhone(info.phone)],
+        ['🆔 Mã số bệnh nhân: ', maskPatientId(info.patientId)],
         ['🌱 Mức cảm xúc: ', info.part1],
         ['🐾 Bé Capybara: ', info.part2]
     ].forEach(([label, value]) => {
@@ -574,9 +578,9 @@ function resetCheckin() {
     const support = $('support-box');
     if (support) support.open = false;
 
-    const phoneInput = $('input-phone');
-    if (phoneInput) phoneInput.value = '';
-    showPhoneError(false);
+    const idInput = $('input-patient-id');
+    if (idInput) idInput.value = '';
+    showIdError(false);
 
     const slider = $('emotion-range');
     if (slider) slider.value = 5;
@@ -625,16 +629,18 @@ document.addEventListener('DOMContentLoaded', function () {
     // Lối đó đã bỏ; xóa luôn bản lưu cũ trên máy để SĐT không nằm lại (dữ liệu thật ở Google Sheet).
     // 'myCheckins' chỉ do app Check-in bản cũ (f76adc9) tạo; app khác cùng origin không dùng khóa này.
     try { localStorage.removeItem('myCheckins'); } catch (e) { /* bỏ qua */ }
+    // Hàng chờ bản 30/10/2026 giữ SĐT: xóa luôn (app không còn hỏi SĐT, Apps Script mới không nhận)
+    try { localStorage.removeItem(OLD_QUEUE_KEY); } catch (e) { /* bỏ qua */ }
 
     initBgMusic();
     initSupport();
     setupImageFallbacks();
     updateEmotionDisplay();
 
-    const phoneInput = $('input-phone');
-    if (phoneInput) {
-        phoneInput.addEventListener('input', onInputChange);
-        phoneInput.addEventListener('blur', () => { showPhoneError(true); checkFormCompletion(); });
+    const idInput = $('input-patient-id');
+    if (idInput) {
+        idInput.addEventListener('input', onInputChange);
+        idInput.addEventListener('blur', () => { showIdError(true); checkFormCompletion(); });
     }
     const slider = $('emotion-range');
     if (slider) slider.addEventListener('input', updateEmotionDisplay);

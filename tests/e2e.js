@@ -2,12 +2,12 @@
    E2E – Check-in Cảm Xúc Mẹ Bầu (QA). Chrome headless thật qua DevTools Protocol.
    Dùng lại thư viện CDP của app checkin-vao-ca (tests/lib/cdp.js), server tĩnh và mock Sheet riêng ở tests/lib.
 
-   Chạy:  node tests/e2e.js [--out=<thư mục kết quả>] [--only=main,phone,...]
-   Kịch bản: main | keyboard | phone | xss | offline | down | hang | double | imgfail | layout | reduced | music | noadmin | sharedkeys
+   Chạy:  node tests/e2e.js [--out=<thư mục kết quả>] [--only=main,patientid,...]
+   Kịch bản: main | keyboard | patientid | xss | offline | down | hang | double | imgfail | layout | reduced | music | noadmin | sharedkeys
 
-   Bản 28/10/2026: app đã sửa theo docs/qa/checkin-me-bau-tong-hop.md (bỏ admin, escape, bàn phím, SĐT Việt Nam,
+   Bản 28/10/2026: app đã sửa theo docs/qa/checkin-me-bau-tong-hop.md (bỏ admin, escape, bàn phím, Mã số bệnh nhân (01/11/2026, thay SĐT),
    hàng chờ gửi lại, nhạc mặc định tắt…). Test kiểm hành vi MỚI; những gì cố ý giữ chờ anh Thông quyết
-   (nhãn 10 mức, ảnh "Lo lắng", nút "Thực hiện check-in khác", SĐT bắt buộc) được kiểm là "giữ nguyên".
+   (nhãn 10 mức, ảnh "Lo lắng", nút "Thực hiện check-in khác", mã số bắt buộc) được kiểm là "giữ nguyên".
 
    AN TOÀN (bắt buộc, vì script.js vẫn giữ URL Apps Script THẬT của anh Thông cho tới khi anh dán URL mới):
    1. static-server thay đúng dòng `const GOOGLE_SCRIPT_URL = '...';` bằng URL mock trong bộ nhớ, và throw nếu
@@ -37,12 +37,12 @@ const APP_URL = 'http://127.0.0.1:' + STATIC_PORT + '/index.html';
 
 /* Chuỗi nguyên văn trong app (index.html / script.js) */
 const TXT = {
-  hintBoth: '💡 Chị nhập số điện thoại và chạm chọn 1 bé Capybara là xong nhé.',
-  hintPhone: '💡 Chị nhập số điện thoại ở trên giúp mình nhé.',
-  hintPhoneBad: '💡 Số điện thoại chưa đúng, chị xem lại giúp mình nhé.',
+  hintBoth: '💡 Chị nhập mã số bệnh nhân và chạm chọn 1 bé Capybara là xong nhé.',
+  hintId: '💡 Chị nhập mã số bệnh nhân ở trên giúp mình nhé.',
+  hintIdBad: '💡 Mã số bệnh nhân chưa đúng, chị xem lại giúp mình nhé.',
   hintCard: '💡 Chị chạm chọn 1 bé Capybara ở Phần 2 nhé.',
   hintDone: '✨ Xong rồi, chị chạm nút Hoàn thành nhé!',
-  phoneError: 'Số điện thoại chưa đúng định dạng Việt Nam (ví dụ 0912 345 678).',
+  idError: 'Chị nhập mã số bệnh nhân (chỉ gồm chữ số, ví dụ 26012345) nhé.',
   toastCard: 'Chị chạm chọn 1 bé Capybara ở Phần 2 nhé.',
   toastMusic: 'Chưa mở được nhạc, chị thử lại sau nhé.',
   btnIdle: 'Hoàn thành Check-in →',
@@ -153,10 +153,11 @@ const level = page => page.evaluate("(() => { const r = document.getElementById(
 const successVisible = page => page.evaluate("getComputedStyle(document.getElementById('page-success')).display !== 'none'");
 const checkinVisible = page => page.evaluate("getComputedStyle(document.getElementById('page-checkin')).display !== 'none'");
 /* Hàng chờ gửi lại (chỉ giữ lượt CHƯA gửi được) */
-const queue = page => page.evaluate("JSON.parse(localStorage.getItem('checkin_me_bau_pending') || '[]')");
+const QKEY = 'checkin_me_bau_queue';
+const queue = page => page.evaluate("JSON.parse(localStorage.getItem('checkin_me_bau_queue') || '[]')");
 const toastText = page => page.evaluate("(() => { const t = document.getElementById('toast'); return t.classList.contains('show') ? t.textContent : ''; })()");
 const uniq = arr => [...new Set(arr)];
-const phoneVal = page => page.evaluate("document.getElementById('input-phone').value");
+const idVal = page => page.evaluate("document.getElementById('input-patient-id').value");
 async function waitFor(page, expr, timeoutMs) {
   const t0 = Date.now();
   while (Date.now() - t0 < (timeoutMs || 3000)) {
@@ -166,8 +167,8 @@ async function waitFor(page, expr, timeoutMs) {
   }
   return null;
 }
-async function typePhone(page, value) {
-  await page.evaluate("(() => { const i = document.getElementById('input-phone'); i.focus(); i.select(); return true; })()");
+async function typeId(page, value) {
+  await page.evaluate("(() => { const i = document.getElementById('input-patient-id'); i.focus(); i.select(); return true; })()");
   if (value === '') { await page.key('Backspace'); return; }
   await page.send('Input.insertText', { text: value });
 }
@@ -275,20 +276,20 @@ async function scenarioMain() {
     T('Tải: alt ảnh mức và aria-valuetext theo mức 5', lv.alt === 'Bé Capybara mức 5: Bình thường (Ổn)' && lv.valuetext === '5 - Bình thường (Ổn)', JSON.stringify({ alt: lv.alt, vt: lv.valuetext }));
     const c0 = await cards(page);
     T('Tải: 6 thẻ là <button type=button>, chưa chọn, aria-pressed=false, tên = data-emotion', c0.length === 6 && c0.every(c => c.tag === 'BUTTON' && c.type === 'button' && !c.selected && c.pressed === 'false' && c.badge === 'none' && c.name === c.data), JSON.stringify(c0.map(c => c.tag + ':' + c.pressed)));
-    T('Tải: focus không tự nhảy vào ô SĐT', await page.evaluate('document.activeElement === document.body'));
+    T('Tải: focus không tự nhảy vào ô mã số', await page.evaluate('document.activeElement === document.body'));
     T('Tải: nút nhạc 🔇 (mặc định TẮT), aria-pressed=false, nhãn cố định "Nhạc nền", audio không phát', (await text(page, '#music-toggle-btn')) === '🔇' && (await page.evaluate("document.getElementById('music-toggle-btn').getAttribute('aria-pressed') === 'false' && document.getElementById('music-toggle-btn').getAttribute('aria-label') === 'Nhạc nền' && document.getElementById('bg-music').paused")));
     T('Tải: chữ mức không aria-live (thanh trượt đã có aria-valuetext, không đọc hai lần)', !(await page.evaluate("document.getElementById('current-status').hasAttribute('aria-live')")));
-    T('Tải: dòng giải thích SĐT nói rõ máy giữ tạm khi mạng yếu', /mạng yếu, máy này giữ tạm/.test(await text(page, '#phone-note')));
-    T('Tải: dòng giải thích vì sao cần SĐT hiện trên ô', /bác sĩ/.test(await text(page, '#phone-note')), await text(page, '#phone-note'));
+    T('Tải: nhãn ô "Mã số bệnh nhân của chị" (icon 🆔), đã bỏ câu giải thích dưới ô', /Mã số bệnh nhân của chị/.test(await text(page, 'label[for="input-patient-id"]')) && (await page.evaluate("!document.getElementById('phone-note') && !document.getElementById('input-phone') && !/điện thoại|giữ tạm/.test(document.querySelector('.patient-id-section').innerText)")), await text(page, '.patient-id-section'));
+    T('Tải: ô mã số type=text, inputmode=numeric, autocomplete=off, placeholder "Ví dụ: 26012345", maxlength 30', (await page.evaluate("(() => { const i = document.getElementById('input-patient-id'); return [i.type, i.inputMode, i.autocomplete, i.placeholder, i.maxLength, i.getAttribute('aria-describedby')].join('|'); })()")) === 'text|numeric|off|Ví dụ: 26012345|30|patient-id-error');
     T('Tải: dòng "Tự đánh giá, không phải thang chẩn đoán." hiện', (await page.evaluate("[...document.querySelectorAll('.footer-note')].some(n => n.offsetParent !== null && n.textContent.includes('không phải thang chẩn đoán'))")));
     await page.click('.main-title');
     await sleep(300);
     T('Nhạc: chạm vào trang KHÔNG tự phát nhạc, không tải mp3', (await page.evaluate("document.getElementById('bg-music').paused")) && requests.filter(r => /background-music\.mp3/.test(r.url)).length === 0);
     await page.screenshot(path.join(OUT, 'shot-main-01-load.png'), true);
 
-    /* --- Nhập SĐT → hint "thiếu thẻ" --- */
-    await typePhone(page, '0912345678');
-    T('Hint: có SĐT, chưa thẻ → "thiếu thẻ"', (await hint(page)) === TXT.hintCard && (await btn(page)).disabled, await hint(page));
+    /* --- Nhập mã số → hint "thiếu thẻ" --- */
+    await typeId(page, '26012345');
+    T('Hint: có mã số, chưa thẻ → "thiếu thẻ"', (await hint(page)) === TXT.hintCard && (await btn(page)).disabled, await hint(page));
 
     /* --- Thanh trượt 1–10 --- */
     const sweep = [];
@@ -332,18 +333,18 @@ async function scenarioMain() {
     s = await qa(page);
     T('Thẻ: rung 25 ms khi chạm', s.vibrate.filter(v => v === 25).length >= 6);
     await pickCard(page, 'Lo lắng');
-    T('Hint: đủ SĐT + thẻ → "✨ đủ", class .done nền xanh nhạt, nút .ready không disabled', (await hint(page)) === TXT.hintDone && (await waitReady(page)) && (await page.evaluate("document.getElementById('submit-hint').classList.contains('done') && getComputedStyle(document.getElementById('submit-hint')).backgroundColor")) === 'rgb(232, 245, 233)', await hint(page));
+    T('Hint: đủ mã số + thẻ → "✨ đủ", class .done nền xanh nhạt, nút .ready không disabled', (await hint(page)) === TXT.hintDone && (await waitReady(page)) && (await page.evaluate("document.getElementById('submit-hint').classList.contains('done') && getComputedStyle(document.getElementById('submit-hint')).backgroundColor")) === 'rgb(232, 245, 233)', await hint(page));
     await sleep(400);
     b = await btn(page);
     T('Nút thức dậy: opacity 1, scale 1, animation gentlePulse, pointer-events auto', b.opacity === '1' && b.transform === 'matrix(1, 0, 0, 1, 0, 0)' && b.anim === 'gentlePulse' && b.pe === 'auto', JSON.stringify(b));
 
-    /* --- Hint "thiếu SĐT" (xóa SĐT khi đã có thẻ) --- */
-    await typePhone(page, '');
-    T('Hint: có thẻ, xóa SĐT → "thiếu SĐT" (không còn chữ "hệ thống"), nút tắt', (await hint(page)) === TXT.hintPhone && (await btn(page)).disabled, await hint(page));
-    await typePhone(page, '09123456');
-    T('Hint: SĐT đang gõ dở 8 số → vẫn "thiếu SĐT", chưa báo lỗi', (await hint(page)) === TXT.hintPhone && (await btn(page)).disabled && (await text(page, '#phone-error')) === '');
-    await typePhone(page, '0912345678');
-    T('Hint: SĐT 10 số trở lại → "✨ đủ"', (await hint(page)) === TXT.hintDone && !!(await waitReady(page)));
+    /* --- Hint "thiếu mã số" (xóa mã số khi đã có thẻ) --- */
+    await typeId(page, '');
+    T('Hint: có thẻ, xóa mã số → "thiếu mã số", nút tắt', (await hint(page)) === TXT.hintId && (await btn(page)).disabled, await hint(page));
+    await typeId(page, '26');
+    T('Hint: mã số đang gõ dở 2 số → vẫn "thiếu mã số", chưa báo lỗi', (await hint(page)) === TXT.hintId && (await btn(page)).disabled && (await text(page, '#patient-id-error')) === '');
+    await typeId(page, '26012345');
+    T('Hint: mã số 8 số trở lại → "✨ đủ"', (await hint(page)) === TXT.hintDone && !!(await waitReady(page)));
     await page.evaluate("document.getElementById('submit-section').scrollIntoView({block:'center'}); true");
     await page.screenshot(path.join(OUT, 'shot-main-02-ready.png'), true);
 
@@ -358,19 +359,19 @@ async function scenarioMain() {
     const req = e.mock.posts()[0] || {};
     T('Gửi: Content-Type text/plain;charset=utf-8 (không preflight)', /^text\/plain;charset=utf-8$/i.test(req.contentType), req.contentType);
     const body = e.mock.state.rows[0] || {};
-    T('Gửi: body đúng 6 trường ageMs, level, part1, part2, phone, sessionId (độ trễ, không giờ tuyệt đối, không created_at)', Object.keys(body).sort().join(',') === 'ageMs,level,part1,part2,phone,sessionId' && Number.isInteger(body.ageMs) && body.ageMs >= 0 && body.ageMs < 5000, JSON.stringify(body));
-    T('Gửi: phone "0912345678", level 3, part1 "3 - Tồi tệ", part2 "Lo lắng", sessionId hợp lệ', body.phone === '0912345678' && body.level === 3 && body.part1 === '3 - Tồi tệ' && body.part2 === 'Lo lắng' && SID_RE.test(body.sessionId), JSON.stringify(body));
+    T('Gửi: body đúng 6 trường ageMs, level, part1, part2, patientId, sessionId (không còn phone, không giờ tuyệt đối, không created_at)', Object.keys(body).sort().join(',') === 'ageMs,level,part1,part2,patientId,sessionId' && Number.isInteger(body.ageMs) && body.ageMs >= 0 && body.ageMs < 5000, JSON.stringify(body));
+    T('Gửi: patientId "26012345", level 3, part1 "3 - Tồi tệ", part2 "Lo lắng", sessionId hợp lệ', body.patientId === '26012345' && body.level === 3 && body.part1 === '3 - Tồi tệ' && body.part2 === 'Lo lắng' && SID_RE.test(body.sessionId), JSON.stringify(body));
     T('Gửi: không alert', s.alerts.length === 0, JSON.stringify(s.alerts));
     s = await qa(page);
     T('Gửi: console.log "[Check-in] Đã lưu lên Google Sheet:" chỉ khi {result:success}', s.logs.some(l => l.startsWith(TXT.logSaved) && /success/.test(l)), JSON.stringify(s.logs));
-    T('Gửi: gửi xong thì hàng chờ trống, không còn "myCheckins" giữ SĐT', (await queue(page)).length === 0 && (await page.evaluate("localStorage.getItem('myCheckins')")) === null, JSON.stringify(await queue(page)));
+    T('Gửi: gửi xong thì hàng chờ trống, không còn "myCheckins" / "checkin_me_bau_pending" giữ SĐT', (await queue(page)).length === 0 && (await page.evaluate("localStorage.getItem('myCheckins') === null && localStorage.getItem('checkin_me_bau_pending') === null")), JSON.stringify(await queue(page)));
     /* --- Trang cảm ơn --- */
     T('Cảm ơn: trang check-in ẩn, trang cảm ơn hiện', !(await checkinVisible(page)) && (await successVisible(page)));
     T('Cảm ơn: tick xanh SVG hiện, vòng tròn stroke animation', (await page.evaluate("(() => { const c = document.querySelector('.checkmark-circle'); const r = c.getBoundingClientRect(); return r.width > 40 && getComputedStyle(c).animationName === 'stroke'; })()")));
     T('Cảm ơn: tiêu đề gọi "chị"', (await text(page, '.success-title')) === TXT.successTitle, await text(page, '.success-title'));
     T('Cảm ơn: focus chuyển lên tiêu đề (trình đọc màn hình biết đã đổi trang)', !!(await waitFor(page, "document.activeElement && document.activeElement.id === 'success-title'", 1000)), await page.evaluate('document.activeElement.id || document.activeElement.tagName'));
     const sum = await page.evaluate("document.getElementById('success-summary').innerText");
-    T('Cảm ơn: tóm tắt che SĐT "0912 ••• 678", có "3 - Tồi tệ", "Lo lắng"', /Số điện thoại: 0912 ••• 678/.test(sum) && !/0912345678/.test(sum) && /Mức cảm xúc: 3 - Tồi tệ/.test(sum) && /Bé Capybara: Lo lắng/.test(sum), sum);
+    T('Cảm ơn: tóm tắt che mã số "26 ••• 345", có "3 - Tồi tệ", "Lo lắng"', /Mã số bệnh nhân: 26 ••• 345/.test(sum) && !/26012345/.test(sum) && !/điện thoại/.test(sum) && /Mức cảm xúc: 3 - Tồi tệ/.test(sum) && /Bé Capybara: Lo lắng/.test(sum), sum);
     const quote3 = await text(page, '#success-quote');
     T('Cảm ơn: mức 3 → câu vỗ về nhẹ, KHÔNG chúc "nhiều niềm vui và hạnh phúc"', /nặng lòng/.test(quote3) && !/niềm vui|hạnh phúc/.test(quote3), quote3);
     T('Cảm ơn: mức 3 → khung "Hỗ trợ" tự mở, có 115, không có số cơ sở bịa', (await page.evaluate("(() => { const d = document.getElementById('support-box'); return d.open && d.innerText.includes('115') && document.getElementById('support-facility').hidden; })()")));
@@ -384,18 +385,18 @@ async function scenarioMain() {
     await restart(page);
     lv = await level(page);
     b = await btn(page);
-    T('Reset: SĐT trống, thanh trượt 5, "5 - Bình thường (Ổn)", ảnh 05', (await phoneVal(page)) === '' && lv.value === '5' && lv.status === '5 - ' + LEVELS[5] && lv.src === 'capy-level-05.png', JSON.stringify(lv));
+    T('Reset: ô mã số trống, thanh trượt 5, "5 - Bình thường (Ổn)", ảnh 05', (await idVal(page)) === '' && lv.value === '5' && lv.status === '5 - ' + LEVELS[5] && lv.src === 'capy-level-05.png', JSON.stringify(lv));
     T('Reset: không thẻ nào chọn (aria-pressed=false), nút disabled, chữ "Hoàn thành Check-in →", hint "thiếu cả hai"', (await cards(page)).every(c => !c.selected && c.pressed === 'false') && b.disabled && !b.ready && b.text === TXT.btnIdle && (await hint(page)) === TXT.hintBoth, JSON.stringify({ b, hint: await hint(page) }));
     T('Reset: trang cảm ơn ẩn, tóm tắt đã dọn, khung Hỗ trợ đóng', (await checkinVisible(page)) && !(await successVisible(page)) && (await page.evaluate("document.getElementById('success-summary').textContent === '' && !document.getElementById('support-box').open")));
 
-    /* --- Lượt 2: SĐT có dấu cách, mức 10 --- */
-    await typePhone(page, '0988 777 666');
+    /* --- Lượt 2: mã số có dấu cách, số 0 ở đầu, mức 10 --- */
+    await typeId(page, '0012 345');
     await pickCard(page, 'Vui vẻ');
     await setSlider(page, 10);
     const sent2 = await submit(page);
     await waitFor(page, "__qa.logs.filter(l => l.includes('Đã lưu')).length >= 2", 2000);
     const r2 = e.mock.state.rows[1] || {};
-    T('Lượt 2: gửi được, mock 2 dòng, SĐT chuẩn hóa "0988777666", level 10, sessionId mới', sent2 && e.mock.state.rows.length === 2 && r2.phone === '0988777666' && r2.level === 10 && r2.part1 === '10 - Rất tuyệt vời' && r2.sessionId !== body.sessionId, JSON.stringify(r2));
+    T('Lượt 2: gửi được, mock 2 dòng, mã số "0012 345" gửi thành chuỗi "0012345" (giữ số 0), level 10, sessionId mới', sent2 && e.mock.state.rows.length === 2 && r2.patientId === '0012345' && r2.level === 10 && r2.part1 === '10 - Rất tuyệt vời' && r2.sessionId !== body.sessionId, JSON.stringify(r2));
     const quote10 = await text(page, '#success-quote');
     T('Lượt 2: mức 10 → giữ câu chúc gốc của anh, khung Hỗ trợ không tự mở', /nhiều niềm vui và hạnh phúc/.test(quote10) && !(await page.evaluate("document.getElementById('support-box').open")), quote10);
 
@@ -421,13 +422,13 @@ async function scenarioKeyboard() {
     /* Thứ tự Tab từ đầu trang (chưa có gì được focus) */
     const order = [];
     for (let i = 0; i < 10; i++) { await page.key('Tab'); order.push(await active()); }
-    const expect = ['#music-toggle-btn', '#input-phone', '#emotion-range'].concat(CARDS.map(n => 'card:' + n), ['support-summary']);
-    T('Tab: thứ tự nhạc → SĐT → thanh trượt → 6 thẻ → Hỗ trợ (nút Hoàn thành tắt nên bỏ qua)', order.join(',') === expect.join(','), order.join(','));
+    const expect = ['#music-toggle-btn', '#input-patient-id', '#emotion-range'].concat(CARDS.map(n => 'card:' + n), ['support-summary']);
+    T('Tab: thứ tự nhạc → mã số → thanh trượt → 6 thẻ → Hỗ trợ (nút Hoàn thành tắt nên bỏ qua)', order.join(',') === expect.join(','), order.join(','));
     /* Làm một lượt (Chrome giữ điểm bắt đầu Tab sau blur, nên đặt focus vào nút nhạc rồi Tab tiếp) */
     await page.evaluate("document.getElementById('music-toggle-btn').focus(); true");
     await page.key('Tab');
-    T('Từ nút nhạc, Tab → ô SĐT', (await active()) === '#input-phone');
-    await page.type('0912345678');
+    T('Từ nút nhạc, Tab → ô mã số', (await active()) === '#input-patient-id');
+    await page.type('26012345');
     await page.key('Tab');
     await page.key('ArrowRight');
     T('Tab → thanh trượt, ArrowRight → mức 6', (await active()) === '#emotion-range' && (await level(page)).value === '6');
@@ -451,60 +452,63 @@ async function scenarioKeyboard() {
     await page.key('Tab');
     T('Tab từ tiêu đề → nút "Thực hiện check-in khác"', (await page.evaluate("document.activeElement.classList.contains('btn-restart')")));
     await page.key('Enter');
-    T('Enter → về trang check-in, form sạch', !!(await waitFor(page, "getComputedStyle(document.getElementById('page-checkin')).display !== 'none'", 1500)) && (await phoneVal(page)) === '');
+    T('Enter → về trang check-in, form sạch', !!(await waitFor(page, "getComputedStyle(document.getElementById('page-checkin')).display !== 'none'", 1500)) && (await idVal(page)) === '');
     const s = await qa(page);
     T('Console: không console.error', s.errors.length === 0, JSON.stringify(s.errors));
     saveConsole('keyboard', e.consoleApi, e.browserLog, s);
   } finally { await teardown(e); }
 }
 
-/* ================= phone: kiểm định dạng SĐT Việt Nam ================= */
-async function scenarioPhone() {
+/* ================= patientid: Mã số bệnh nhân (01/11/2026) – chỉ chữ số, 3–20 số ================= */
+async function scenarioPatientId() {
   let e;
   try {
     e = await setup({});
     const { page } = e;
-    const tryPhone = async (v) => { await typePhone(page, v); await sleep(30); const b = await btn(page); return { v, enabled: !b.disabled && b.ready, hint: await hint(page), err: await text(page, '#phone-error'), value: await phoneVal(page) }; };
+    const tryId = async (v) => { await typeId(page, v); await sleep(30); const b = await btn(page); return { v, enabled: !b.disabled && b.ready, hint: await hint(page), err: await text(page, '#patient-id-error'), value: await idVal(page) }; };
     await pickCard(page, 'Buồn');
     const cases = [
-      ['09123456', false], ['abcdefghi', false], ['=1+1+1+1+1', false], ['0123456789', false], ['09123456789', false],
-      ['+84 912 345 678', true], ['0912 345 678', true], ['0912.345.678', true], ['84912345678', true], ['024 3825 1234', true], ['   0912345678   ', true]
+      ['12', false], ['1'.repeat(21), false], ['HV123', false], ['=1+1', false], ['abcdefghi', false], ['26012345abc', false], ['(026) 012345', false],
+      ['26012345', true], ['0012345', true], ['260 123 45', true], ['260.123.45', true], ['260-123-45', true], ['   26012345   ', true], ['123', true], ['1'.repeat(20), true]
     ];
     const got = [];
-    for (const [v, want] of cases) { const r = await tryPhone(v); got.push((r.enabled === want ? 'ok ' : 'LỖI ') + JSON.stringify(v) + '→' + (r.enabled ? 'bật' : 'tắt')); }
-    T('SĐT: 5 mẫu sai bị chặn (8 số, chữ, "=1+1…", đầu 01, 11 số di động), 6 mẫu đúng được nhận (+84, dấu cách, dấu chấm, 84…, cố định 02x, khoảng trắng hai đầu)', got.every(x => x.startsWith('ok')), got.join(' | '));
-    let r = await tryPhone('abcdefghi');
-    T('SĐT có chữ → lỗi mềm ngay dưới ô, aria-invalid, hint "SĐT chưa đúng"', r.err === TXT.phoneError && r.hint === TXT.hintPhoneBad && (await page.evaluate("document.getElementById('input-phone').getAttribute('aria-invalid')")) === 'true', JSON.stringify(r));
-    r = await tryPhone('0912');
-    T('SĐT đang gõ dở "0912" → chưa báo lỗi, hint "thiếu SĐT"', r.err === '' && r.hint === TXT.hintPhone, JSON.stringify(r));
-    await page.evaluate("document.getElementById('input-phone').blur(); true");
-    T('Rời ô khi SĐT còn dở → hiện lỗi mềm có ví dụ', (await text(page, '#phone-error')) === TXT.phoneError && (await hint(page)) === TXT.hintPhoneBad);
-    r = await tryPhone('0912345678');
-    T('Sửa lại đúng → lỗi tắt, aria-invalid bỏ, nút bật', r.err === '' && r.enabled && (await page.evaluate("document.getElementById('input-phone').hasAttribute('aria-invalid')")) === false, JSON.stringify(r));
-    r = await tryPhone('0912345678091234567890123');
-    T('Ô SĐT: maxlength 20 (không nhận chuỗi dài vô hạn)', r.value.length <= 20 && !r.enabled, r.value.length + ' ký tự');
-    T('Ô SĐT: type=tel, autocomplete=tel, aria-describedby gồm phone-note và phone-error', (await page.evaluate("(() => { const i = document.getElementById('input-phone'); return i.type + '|' + i.autocomplete + '|' + i.getAttribute('aria-describedby'); })()")) === 'tel|tel|phone-note phone-error');
+    for (const [v, want] of cases) { const r = await tryId(v); got.push((r.enabled === want ? 'ok ' : 'LỖI ') + JSON.stringify(v) + '→' + (r.enabled ? 'bật' : 'tắt')); }
+    T('Mã số: 7 mẫu sai bị chặn ("12", 21 chữ số, "HV123", "=1+1", chữ, chữ lẫn số, ngoặc), 8 mẫu đúng được nhận (26012345, "0012345", dấu cách, chấm, gạch, khoảng trắng hai đầu, 3 số, 20 số)', got.every(x => x.startsWith('ok')), got.join(' | '));
+    let r = await tryId('HV123');
+    T('Mã số có chữ → lỗi mềm ngay dưới ô (giọng "chị", "nhé"), aria-invalid, hint "mã số chưa đúng"', r.err === TXT.idError && r.hint === TXT.hintIdBad && (await page.evaluate("document.getElementById('input-patient-id').getAttribute('aria-invalid')")) === 'true', JSON.stringify(r));
+    r = await tryId('1'.repeat(21));
+    T('Mã số 21 chữ số → báo lỗi ngay khi gõ (không chờ rời ô)', r.err === TXT.idError && !r.enabled, JSON.stringify(r));
+    r = await tryId('12');
+    T('Mã số đang gõ dở "12" → chưa báo lỗi, hint "thiếu mã số"', r.err === '' && r.hint === TXT.hintId, JSON.stringify(r));
+    await page.evaluate("document.getElementById('input-patient-id').blur(); true");
+    T('Rời ô khi mã số còn dở "12" → hiện lỗi mềm có ví dụ', (await text(page, '#patient-id-error')) === TXT.idError && (await hint(page)) === TXT.hintIdBad);
+    r = await tryId('26012345');
+    T('Sửa lại đúng → lỗi tắt, aria-invalid bỏ, nút bật', r.err === '' && r.enabled && (await page.evaluate("document.getElementById('input-patient-id').hasAttribute('aria-invalid')")) === false, JSON.stringify(r));
+    r = await tryId('1234567890123456789012345678901234567890');
+    T('Ô mã số: maxlength 30 (không nhận chuỗi dài vô hạn)', r.value.length <= 30 && !r.enabled, r.value.length + ' ký tự');
 
-    /* Gửi với +84 → server nhận số đã chuẩn hóa */
-    await typePhone(page, '+84 912 345 678');
-    T('Gửi "+84 912 345 678": POST phone "0912345678"', (await submit(page)) && !!(await waitFor(page, '__qa.fetches.length >= 1', 1500)) && e.mock.state.rows.length === 1 && e.mock.state.rows[0].phone === '0912345678', JSON.stringify(e.mock.state.rows[0]));
+    /* Gửi "0012 345" → server nhận chuỗi chữ số, giữ số 0 đầu */
+    await typeId(page, '0012 345');
+    T('Gửi "0012 345": POST patientId là CHUỖI "0012345", không có trường phone', (await submit(page)) && !!(await waitFor(page, '__qa.fetches.length >= 1', 1500)) && e.mock.state.rows.length === 1 && e.mock.state.rows[0].patientId === '0012345' && !('phone' in e.mock.state.rows[0]), JSON.stringify(e.mock.state.rows[0]));
+    const sum = await page.evaluate("document.getElementById('success-summary').innerText");
+    T('Cảm ơn: mã 7 số "0012345" che thành "••• 45"', /Mã số bệnh nhân: ••• 45/.test(sum) && !/0012345/.test(sum), sum);
     await restart(page);
 
     /* Gọi submitCheckin() trực tiếp khi chưa đủ điều kiện: toast, không alert, không POST */
-    await typePhone(page, '=1+1+1+1+1');
+    await typeId(page, '=1+1');
     await pickCard(page, 'Vui vẻ');
     await page.evaluate('submitCheckin(); true');
     let s = await qa(page);
-    T('submitCheckin() với SĐT "=1+1…" → toast lỗi mềm, focus ô SĐT, không alert, không POST', (await toastText(page)) === TXT.phoneError && (await page.evaluate("document.activeElement.id")) === 'input-phone' && s.alerts.length === 0 && e.mock.state.rows.length === 1, JSON.stringify({ toast: await toastText(page), alerts: s.alerts, rows: e.mock.state.rows.length }));
+    T('submitCheckin() với mã số "=1+1" → toast lỗi mềm, focus ô mã số, không alert, không POST', (await toastText(page)) === TXT.idError && (await page.evaluate("document.activeElement.id")) === 'input-patient-id' && s.alerts.length === 0 && e.mock.state.rows.length === 1, JSON.stringify({ toast: await toastText(page), alerts: s.alerts, rows: e.mock.state.rows.length }));
     /* Đang ở trang check-in (nút "check-in khác" ẩn) → làm sạch form bằng resetCheckin(); ẩn toast cũ */
     await page.evaluate("resetCheckin(); document.getElementById('toast').classList.remove('show'); true");
-    await typePhone(page, '0912345678');
+    await typeId(page, '26012345');
     await page.evaluate('submitCheckin(); true');
     s = await qa(page);
-    T('submitCheckin() có SĐT, chưa thẻ → toast "' + TXT.toastCard + '", không POST', (await toastText(page)) === TXT.toastCard && s.alerts.length === 0 && e.mock.state.rows.length === 1, await toastText(page));
+    T('submitCheckin() có mã số, chưa thẻ → toast "' + TXT.toastCard + '", không POST', (await toastText(page)) === TXT.toastCard && s.alerts.length === 0 && e.mock.state.rows.length === 1, await toastText(page));
     T('Toast có role="status" (trình đọc màn hình đọc được)', (await page.evaluate("document.getElementById('toast').getAttribute('role')")) === 'status');
     T('Console: không console.error', s.errors.length === 0, JSON.stringify(s.errors));
-    saveConsole('phone', e.consoleApi, e.browserLog, s);
+    saveConsole('patientid', e.consoleApi, e.browserLog, s);
   } finally { await teardown(e); }
 }
 
@@ -515,18 +519,18 @@ async function scenarioXss() {
     e = await setup({});
     const { page } = e;
     await pickCard(page, 'Buồn');
-    await typePhone(page, '<img src=x onerror="window.__xssSummary=1">');
+    await typeId(page, '<img src=x onerror="window.__xssSummary=1">');
     await sleep(100);
-    T('SĐT chứa HTML → nút KHÔNG bật', (await btn(page)).disabled);
+    T('Mã số chứa HTML → nút KHÔNG bật', (await btn(page)).disabled);
     await page.evaluate('submitCheckin(); true');
     await sleep(500);
-    T('submitCheckin() trực tiếp với SĐT chứa HTML → không POST, không trang cảm ơn', e.mock.state.rows.length === 0 && !(await successVisible(page)));
+    T('submitCheckin() trực tiếp với mã số chứa HTML → không POST, không trang cảm ơn', e.mock.state.rows.length === 0 && !(await successVisible(page)));
     /* Gọi thẳng hàm dựng tóm tắt với cả ba trường độc */
-    await page.evaluate(`renderSummary({ phone: '<img src=x onerror="window.__xss1=1">', part1: '<img src=x onerror="window.__xss2=1">', part2: '<b id="xssb">đậm</b><script>window.__xss3=1<\\/script>' }); true`);
+    await page.evaluate(`renderSummary({ patientId: '<img src=x onerror="window.__xss1=1">', part1: '<img src=x onerror="window.__xss2=1">', part2: '<b id="xssb">đậm</b><script>window.__xss3=1<\\/script>' }); true`);
     await sleep(400);
     const x = await page.evaluate("({ ran: !!(window.__xssSummary || window.__xss1 || window.__xss2 || window.__xss3), imgs: document.querySelectorAll('#success-summary img, #success-summary script, #xssb').length, text: document.getElementById('success-summary').textContent })");
     T('renderSummary: chuỗi HTML hiện dạng chữ, 0 phần tử <img>/<script>/<b> được tạo, onerror không chạy', !x.ran && x.imgs === 0 && x.text.includes('<img src=x onerror="window.__xss2=1">') && x.text.includes('<b id="xssb">'), JSON.stringify(x));
-    T('renderSummary: SĐT lạ cũng bị che (không hiện nguyên chuỗi)', !x.text.includes('window.__xss1'), x.text.slice(0, 120));
+    T('renderSummary: mã số lạ cũng bị che (không hiện nguyên chuỗi)', !x.text.includes('window.__xss1'), x.text.slice(0, 120));
     const s = await qa(page);
     T('Console: không console.error', s.errors.length === 0, JSON.stringify(s.errors));
     saveConsole('xss', e.consoleApi, e.browserLog, s);
@@ -539,7 +543,7 @@ async function scenarioOffline() {
   try {
     e = await setup({});
     const { page } = e;
-    await typePhone(page, '0912345678');
+    await typeId(page, '26012345');
     await pickCard(page, 'Hoảng hốt');
     await page.send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
     T('Offline: navigator.onLine = false', !(await page.evaluate('navigator.onLine')));
@@ -558,7 +562,7 @@ async function scenarioOffline() {
     await page.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
     /* Tải lại trang có mạng: app tự gửi lại lượt còn trong hàng chờ */
     await page.navigate(APP_URL);
-    await waitFor(page, "!localStorage.getItem('checkin_me_bau_pending')", 3000);
+    await waitFor(page, "!localStorage.getItem('checkin_me_bau_queue')", 3000);
     /* Có thể có 2 POST cùng sessionId (trang cũ nhận sự kiện online, trang mới gửi lúc tải); mock gộp theo Mã phiên như Apps Script thật */
     const rows1 = e.mock.state.rows.map(r => r.sessionId);
     T('Có mạng, tải lại: app tự gửi lại lượt offline → Sheet có ĐÚNG 1 dòng, cùng sessionId, hàng chờ trống', rows1.length === 1 && rows1[0] === sid1 && (await queue(page)).length === 0, JSON.stringify(e.mock.state.rows.map(r => r.sessionId + ':' + r.part2)) + ' / ' + e.mock.posts().length + ' POST');
@@ -571,14 +575,14 @@ async function scenarioOffline() {
     if (e.mock.posts().length > 1) note('Gửi lại tạo ' + e.mock.posts().length + ' POST cùng sessionId; mock (như Apps Script) cập nhật cùng dòng.');
 
     /* Lượt 2 offline, rồi có mạng lại mà KHÔNG tải lại trang → sự kiện online gửi lại */
-    await typePhone(page, '0912345678');
+    await typeId(page, '26012345');
     await pickCard(page, 'Buồn');
     await page.send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
     await submit(page);
-    await waitFor(page, "JSON.parse(localStorage.getItem('checkin_me_bau_pending') || '[]').length === 1 && __qa.warns.length > 0", 3000);
+    await waitFor(page, "JSON.parse(localStorage.getItem('checkin_me_bau_queue') || '[]').length === 1 && __qa.warns.length > 0", 3000);
     await page.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
     await page.evaluate("window.dispatchEvent(new Event('online')); true");
-    await waitFor(page, "!localStorage.getItem('checkin_me_bau_pending')", 3000);
+    await waitFor(page, "!localStorage.getItem('checkin_me_bau_queue')", 3000);
     T('Có mạng lại (sự kiện online): gửi lại lượt 2, hàng chờ trống, Sheet đúng 2 dòng (2 sessionId)', e.mock.state.rows.length === 2 && uniq(e.mock.state.rows.map(r => r.sessionId)).length === 2 && (await queue(page)).length === 0, JSON.stringify(e.mock.state.rows.map(r => r.sessionId + ':' + r.part2)));
     s = await qa(page);
     saveConsole('offline', e.consoleApi, e.browserLog, s);
@@ -592,7 +596,7 @@ async function scenarioDown() {
     e = await setup({});
     const { page } = e;
     e.mock.state.mode = '500json';
-    await typePhone(page, '0912345678');
+    await typeId(page, '26012345');
     await pickCard(page, 'Tức giận');
     T('500+JSON: trang cảm ơn vẫn hiện', await submit(page));
     await waitFor(page, '__qa.warns.length > 0', 3000);
@@ -601,7 +605,7 @@ async function scenarioDown() {
     T('500+JSON: lượt nằm trong hàng chờ', (await queue(page)).length === 1);
     await restart(page);
     e.mock.state.mode = '500text';
-    await typePhone(page, '0912345678');
+    await typeId(page, '26012345');
     await pickCard(page, 'Khó chịu');
     T('500+HTML: trang cảm ơn vẫn hiện', await submit(page));
     await waitFor(page, '__qa.warns.length > 1', 3000);
@@ -609,7 +613,7 @@ async function scenarioDown() {
     T('500+HTML: warn "Chưa gửi được", hàng chờ 2 lượt', s.warns.filter(w => w.startsWith(TXT.warnRetry)).length === 2 && (await queue(page)).length === 2, JSON.stringify(s.warns));
     await restart(page);
     e.mock.state.mode = 'reject';
-    await typePhone(page, '0912345678');
+    await typeId(page, '26012345');
     await pickCard(page, 'Vui vẻ');
     T('Máy chủ từ chối (200 + result:error): trang cảm ơn vẫn hiện', await submit(page));
     await waitFor(page, '__qa.warns.length > 2', 3000);
@@ -619,7 +623,7 @@ async function scenarioDown() {
     e.mock.state.mode = 'ok';
     e.mock.state.rows.length = 0;
     await page.evaluate("window.dispatchEvent(new Event('online')); true");
-    await waitFor(page, "!localStorage.getItem('checkin_me_bau_pending')", 3000);
+    await waitFor(page, "!localStorage.getItem('checkin_me_bau_queue')", 3000);
     s = await qa(page);
     T('Máy chủ khỏe lại: gửi lại đúng 2 lượt còn treo, 2 log "Đã lưu", hàng chờ trống', e.mock.state.rows.length === 2 && uniq(e.mock.state.rows.map(r => r.part2)).sort().join(',') === 'Khó chịu,Tức giận' && s.logs.filter(l => l.startsWith(TXT.logSaved)).length === 2 && (await queue(page)).length === 0, JSON.stringify(e.mock.state.rows.map(r => r.part2)));
     T('Lỗi máy chủ: không console.error, không alert', s.errors.length === 0 && s.alerts.length === 0, JSON.stringify(s.errors));
@@ -636,7 +640,7 @@ async function scenarioHang() {
     e.mock.state.mode = 'hang';
     /* Rút ngắn thời gian chờ để test nhanh (mặc định 15 s) */
     await page.evaluate('SEND_TIMEOUT_MS = 800; true');
-    await typePhone(page, '0912345678');
+    await typeId(page, '26012345');
     await pickCard(page, 'Vui vẻ');
     const t0 = Date.now();
     const sent = await submit(page);
@@ -658,7 +662,7 @@ async function scenarioDouble() {
   try {
     e = await setup({});
     const { page } = e;
-    await typePhone(page, '0912345678');
+    await typeId(page, '26012345');
     await pickCard(page, 'Buồn');
     await waitReady(page);
     await assertSafeUrl(page);
@@ -673,19 +677,19 @@ async function scenarioDouble() {
     T('Double tap: chỉ 1 POST', e.mock.posts().length === 1, e.mock.posts().length);
     T('Double tap: chữ nút "Đang lưu Check-in…" + class .sending (thôi đập nhịp)', (await btn(page)).text === TXT.btnSaving && (await page.evaluate("document.getElementById('btn-submit').classList.contains('sending')")), (await btn(page)).text);
     await restart(page);
-    await typePhone(page, '0912345678');
+    await typeId(page, '26012345');
     await pickCard(page, 'Buồn');
     await assertSafeUrl(page);
     await page.evaluate('submitCheckin(); submitCheckin(); true');
     await sleep(700);
     T('Gọi submitCheckin() 2 lần liên tiếp → chỉ thêm 1 POST (cờ isSending)', e.mock.posts().length === 2, e.mock.posts().length + ' POST');
     await restart(page);
-    await typePhone(page, '0912345678');
+    await typeId(page, '26012345');
     await pickCard(page, 'Buồn');
-    await page.evaluate("document.getElementById('input-phone').focus(); true");
+    await page.evaluate("document.getElementById('input-patient-id').focus(); true");
     await page.key('Enter');
     await sleep(300);
-    T('Enter trong ô SĐT không gửi (không có <form>)', e.mock.posts().length === 2 && (await checkinVisible(page)));
+    T('Enter trong ô mã số không gửi (không có <form>)', e.mock.posts().length === 2 && (await checkinVisible(page)));
     const s = await qa(page);
     T('Console: không console.error', s.errors.length === 0, JSON.stringify(s.errors));
     saveConsole('double', e.consoleApi, e.browserLog, s);
@@ -732,7 +736,7 @@ async function scenarioLayout() {
       const over = [...document.querySelectorAll('body *')].filter(el => !el.matches('#fireworks-canvas, #music-hint, #toast, audio, source')).filter(el => { const b = el.getBoundingClientRect(); return b.width > 0 && (b.right > innerWidth + 0.5 || b.left < -0.5); }).map(el => el.tagName + '.' + el.className).slice(0, 6);
       const cols = getComputedStyle(document.querySelector('.emotion-grid')).gridTemplateColumns.split(' ').length;
       /* chỉ đo phần tử đang hiện (.btn-restart ở trang cảm ơn đang ẩn → bỏ) */
-      const taps = ['#input-phone', '#emotion-range', '.capy-card', '#btn-submit', '#music-toggle-btn', '.btn-restart', '.support-summary'].map(s => { const b = document.querySelector(s).getBoundingClientRect(); return b.width > 0 ? s + ':' + Math.round(b.width) + 'x' + Math.round(b.height) : null; }).filter(Boolean);
+      const taps = ['#input-patient-id', '#emotion-range', '.capy-card', '#btn-submit', '#music-toggle-btn', '.btn-restart', '.support-summary'].map(s => { const b = document.querySelector(s).getBoundingClientRect(); return b.width > 0 ? s + ':' + Math.round(b.width) + 'x' + Math.round(b.height) : null; }).filter(Boolean);
       const btn = r('#btn-submit');
       document.getElementById('music-hint').classList.add('show');
       const mh = r('#music-hint');
@@ -760,7 +764,7 @@ async function scenarioLayout() {
     await page.screenshot(path.join(OUT, 'shot-layout-320-top.png'), false);
     await page.screenshot(path.join(OUT, 'shot-layout-320-full.png'), true);
     /* Trang cảm ơn ở 320 */
-    await typePhone(page, '0912345678');
+    await typeId(page, '26012345');
     await pickCard(page, 'Vui vẻ');
     await submit(page);
     await sleep(1200);
@@ -781,7 +785,7 @@ async function scenarioReduced() {
     T('reduce: matchMedia = true', await page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"));
     const animLoad = await page.evaluate("({ page: getComputedStyle(document.getElementById('page-checkin')).animationName, capy: getComputedStyle(document.getElementById('current-capy')).animationName })");
     T('reduce: tắt fadeIn của trang và gentlePop của ảnh mức', animLoad.page === 'none' && animLoad.capy === 'none', JSON.stringify(animLoad));
-    await typePhone(page, '0912345678');
+    await typeId(page, '26012345');
     await pickCard(page, 'Vui vẻ');
     await waitReady(page);
     const b = await btn(page);
@@ -831,10 +835,10 @@ async function scenarioNoAdmin() {
     await sleep(300);
     T('Mở bản mới: lịch sử cũ "myCheckins" (SĐT thô) bị dọn khỏi máy', (await page.evaluate("localStorage.getItem('myCheckins')")) === null);
     T('Không còn modal / hàm quản trị (admin-modal, openAdminPanel, fetchHistory, deleteCheckin)', (await page.evaluate("!document.getElementById('admin-modal') && typeof openAdminPanel === 'undefined' && typeof fetchHistory === 'undefined' && typeof deleteCheckin === 'undefined'")));
-    await typePhone(page, '0967791552');
+    await typeId(page, '0967791552');
     await sleep(200);
     await pickCard(page, 'Vui vẻ');
-    T('Gõ 0967791552: là một SĐT bình thường, không mở gì, ô không bị xóa, nút bật', (await phoneVal(page)) === '0967791552' && !!(await waitReady(page)) && (await page.evaluate("document.querySelectorAll('table, [role=dialog]').length")) === 0);
+    T('Gõ 0967791552 (số admin cũ): chỉ là một mã số bình thường, không mở gì, ô không bị xóa, nút bật', (await idVal(page)) === '0967791552' && !!(await waitReady(page)) && (await page.evaluate("document.querySelectorAll('table, [role=dialog]').length")) === 0);
     T('Không XSS từ dữ liệu cũ', (await page.evaluate('window.__xssAdmin')) === undefined || (await page.evaluate('window.__xssAdmin')) === null);
     const s = await qa(page);
     T('Console: không console.error', s.errors.length === 0, JSON.stringify(s.errors));
@@ -850,17 +854,18 @@ async function scenarioSharedKeys() {
     const { page } = e;
     /* ditruyenhungvuong.github.io/<repo>/ dùng chung localStorage: đặt sẵn khóa của Nhật Ký Mẹ Bầu + khóa cũ của Check-in */
     const SEED = { musicMuted: 'true', myJourneys: JSON.stringify([{ id: 'j1', note: 'giả lập Nhật Ký' }]), user_0912345678: JSON.stringify({ name: 'Chị Lan', phone: '0912345678' }) };
-    await page.evaluate(`(() => { const s = ${JSON.stringify(SEED)}; Object.keys(s).forEach(k => localStorage.setItem(k, s[k])); localStorage.setItem('myCheckins', '[{"phone":"0911111111"}]'); return true; })()`);
+    await page.evaluate(`(() => { const s = ${JSON.stringify(SEED)}; Object.keys(s).forEach(k => localStorage.setItem(k, s[k])); localStorage.setItem('myCheckins', '[{"phone":"0911111111"}]'); localStorage.setItem('checkin_me_bau_pending', JSON.stringify([{ payload: { sessionId: 'sess-old-0001', phone: '0911111111', level: 5, part1: '5 - Bình thường (Ổn)', part2: 'Vui vẻ' }, queuedAt: Date.now() }])); return true; })()`);
     await page.navigate(APP_URL);
     await sleep(1200);
     const snap = () => page.evaluate(`(() => { const o = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); o[k] = localStorage.getItem(k); } return o; })()`);
     let st = await snap();
     T('Mở Check-in: 3 khóa của Nhật Ký (musicMuted, myJourneys, user_0912345678) còn nguyên giá trị', Object.keys(SEED).every(k => st[k] === SEED[k]), JSON.stringify(st));
-    T('Mở Check-in: chỉ dọn "myCheckins" (khóa riêng của Check-in bản cũ)', !('myCheckins' in st));
+    T('Mở Check-in: chỉ dọn "myCheckins" và hàng chờ cũ "checkin_me_bau_pending" (còn giữ SĐT) của chính Check-in', !('myCheckins' in st) && !('checkin_me_bau_pending' in st));
+    T('Hàng chờ cũ (có SĐT) bị bỏ, KHÔNG gửi lên máy chủ', e.mock.posts().length === 0 && !e.mock.posts().some(p => /0911111111/.test(p.body)), e.mock.posts().length + ' POST');
     /* Dùng hết các chức năng: bật nhạc (lỗi 404), gửi offline để có hàng chờ, gửi lại, làm lại */
     await page.click('#music-toggle-btn');
     await sleep(800);
-    await typePhone(page, '0912345678');
+    await typeId(page, '26012345');
     await pickCard(page, 'Buồn');
     await page.send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
     await submit(page);
@@ -870,7 +875,7 @@ async function scenarioSharedKeys() {
     T('Khóa app tự ghi đều có tiền tố "checkin_me_bau_"', ownKeys.length >= 1 && ownKeys.every(k => k.startsWith('checkin_me_bau_')), ownKeys.join(','));
     await page.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
     await page.evaluate("window.dispatchEvent(new Event('online')); true");
-    await waitFor(page, "!localStorage.getItem('checkin_me_bau_pending')", 3000);
+    await waitFor(page, "!localStorage.getItem('checkin_me_bau_queue')", 3000);
     await restart(page);
     st = await snap();
     T('Sau bật nhạc, gửi offline, gửi lại, làm lại: 3 khóa của Nhật Ký vẫn nguyên, không còn khóa lạ', Object.keys(SEED).every(k => st[k] === SEED[k]) && Object.keys(st).filter(k => !(k in SEED)).every(k => k.startsWith('checkin_me_bau_')), JSON.stringify(st));
@@ -881,7 +886,7 @@ async function scenarioSharedKeys() {
 }
 
 /* ===== Chạy ===== */
-const SCENARIOS = { main: scenarioMain, keyboard: scenarioKeyboard, phone: scenarioPhone, xss: scenarioXss, offline: scenarioOffline, down: scenarioDown, hang: scenarioHang, double: scenarioDouble, imgfail: scenarioImgFail, layout: scenarioLayout, reduced: scenarioReduced, music: scenarioMusic, noadmin: scenarioNoAdmin, sharedkeys: scenarioSharedKeys };
+const SCENARIOS = { main: scenarioMain, keyboard: scenarioKeyboard, patientid: scenarioPatientId, xss: scenarioXss, offline: scenarioOffline, down: scenarioDown, hang: scenarioHang, double: scenarioDouble, imgfail: scenarioImgFail, layout: scenarioLayout, reduced: scenarioReduced, music: scenarioMusic, noadmin: scenarioNoAdmin, sharedkeys: scenarioSharedKeys };
 (async () => {
   const names = argv.only ? String(argv.only).split(',') : Object.keys(SCENARIOS);
   const before = fs.readFileSync(path.join(APP, 'script.js'), 'utf8');
@@ -897,7 +902,7 @@ const SCENARIOS = { main: scenarioMain, keyboard: scenarioKeyboard, phone: scena
   scenarioName = 'dọn';
   T('Vệ sinh: test không ghi vào script.js (so byte trước/sau lần chạy)', fs.readFileSync(path.join(APP, 'script.js'), 'utf8') === before);
   T('AN TOÀN: đã xác nhận URL mock trước mỗi lần bấm Hoàn thành (' + safeChecks + ' lần)', safeChecks > 0);
-  T('Vệ sinh: không file lạ trong thư mục app (ngoài tests/)', fs.readdirSync(APP).filter(f => !['.gitignore', 'NGUON.md', 'google_apps_script.js', 'index.html', 'script.js', 'styles.css', 'upload.bat', 'upload.sh', 'tests', 'background-music.mp3'].includes(f) && !/^(capy-level-\d\d\.png|(vui|buon|khoc|tuc|hoang_hot|kho_chiu)\.jpg)$/.test(f)).length === 0, fs.readdirSync(APP).join(','));
+  T('Vệ sinh: không file lạ trong thư mục app (ngoài tests/)', fs.readdirSync(APP).filter(f => !['.git', '.gitignore', 'NGUON.md', 'README.md', 'google_apps_script.js', 'google_apps_script-du-an-cu.js', 'index.html', 'script.js', 'styles.css', 'upload.bat', 'upload.sh', 'tests', 'background-music.mp3'].includes(f) && !/^(capy-level-\d\d\.png|(vui|buon|khoc|tuc|hoang_hot|kho_chiu)\.jpg)$/.test(f)).length === 0, fs.readdirSync(APP).join(','));
   const pass = results.filter(r => r.startsWith('PASS')).length;
   const flaky = results.filter(r => r.startsWith('CHẬP CHỜN')).length;
   const total = results.filter(r => /^(PASS|FAIL|CRASH|CHẬP)/.test(r)).length;

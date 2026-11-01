@@ -288,19 +288,12 @@ button {
     font-style: italic;
 }
 
-/* --- Ô NHẬP SỐ ĐIỆN THOẠI --- */
-.phone-section {
+/* --- Ô NHẬP MÃ SỐ BỆNH NHÂN --- */
+.patient-id-section {
     margin-top: 10px;
 }
 
-.phone-note {
-    font-size: 13.5px;
-    color: var(--ink-soft);
-    line-height: 1.5;
-    margin-bottom: 10px;
-}
-
-.phone-error {
+.patient-id-error {
     font-size: 13.5px;
     color: var(--rose-800);
     font-weight: 700;
@@ -308,7 +301,7 @@ button {
     min-height: 1px;
 }
 
-.phone-error:empty {
+.patient-id-error:empty {
     margin-top: 0;
 }
 
