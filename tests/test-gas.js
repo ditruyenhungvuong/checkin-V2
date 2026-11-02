@@ -7,6 +7,9 @@
    = + - @, giới hạn độ dài, LockService, ghi đúng tab theo tên, giờ: giờ máy chủ − ageMs hợp lệ (0…8 ngày)
    hoặc giờ máy chủ, cùng Mã phiên + cùng mã số thì cập nhật và giữ cột A, khác mã số thì session_conflict,
    Mã phiên bắt buộc (dự án mới không nhận app cũ), B1 "Số điện thoại" tự đổi thành "Mã số bệnh nhân".
+   02/11/2026: 9 cảm xúc theo bộ ảnh mới (Vui vẻ, Đau khổ, Lo lắng, Tức giận, Hoảng hốt, Khó chịu, Mệt mỏi, Bình an,
+   Cô đơn) + vẫn nhận nhãn cũ "Buồn" (web bản cũ, ghi nguyên chữ); menu cài một lần (onOpen →
+   caiDatBangBacSi): tô màu theo mức ĐỎ 1–3 / VÀNG 4–5 / XANH 6–10, tab Tổng hợp, tab Tra cứu, khóa cứng các tab.
    Cuối file: kiểm nhanh google_apps_script-du-an-cu.js (bản cho dự án CŨ) vẫn tắt doGet và nhận app cũ.
    ========================================================= */
 'use strict';
@@ -22,22 +25,79 @@ let passes = 0;
 const T = (name, ok, detail) => { if (ok) passes++; else fails++; console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail !== undefined ? '  → ' + String(detail).replace(/\s+/g, ' ').slice(0, 240) : '')); };
 
 /* ===== Giả lập Sheet ===== */
+/* "B2" → [2, 2, 1, 1]; "A2:D1000" → [2, 1, 999, 4] */
+const colNum = L => L.split('').reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+function parseA1(a1) {
+  const m = /^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$/.exec(a1);
+  if (!m) throw new Error('mock: A1 lạ ' + a1);
+  const r = +m[2], c = colNum(m[1]);
+  return m[3] ? [r, c, +m[4] - r + 1, colNum(m[3]) - c + 1] : [r, c, 1, 1];
+}
 function makeSheet(name) {
-  const s = { name, rows: [], frozen: 0, hidden: [], fmt: [], numFmt: [] };
+  const s = { name, rows: [], frozen: 0, hidden: [], fmt: [], numFmt: [], maxRows: 1000, cfRules: [], protections: [], meta: [], formulas: {}, widths: {}, borders: [], cleared: 0 };
   s.getLastRow = () => s.rows.length;
+  s.getMaxRows = () => s.maxRows;
   s.appendRow = r => { s.rows.push(r.slice()); };
   s.setFrozenRows = n => { s.frozen = n; };
   s.hideColumns = c => { s.hidden.push(c); };
   s.deleteRow = n => { s.rows.splice(n - 1, 1); };
-  s.getRange = (r, c, nr, nc) => ({
-    getValues: () => Array.from({ length: nr || 1 }, (_, i) => Array.from({ length: nc || 1 }, (_, j) => { const row = s.rows[r - 1 + i] || []; return row[c - 1 + j] == null ? '' : row[c - 1 + j]; })),
-    setValues(vals) { vals.forEach((v, i) => { const row = s.rows[r - 1 + i] || (s.rows[r - 1 + i] = []); v.forEach((x, j) => { row[c - 1 + j] = x; }); }); return this; },
-    getValue: () => { const row = s.rows[r - 1] || []; return row[c - 1] == null ? '' : row[c - 1]; },
-    setValue(x) { const row = s.rows[r - 1] || (s.rows[r - 1] = []); row[c - 1] = x; return this; },
-    setNumberFormat(f) { s.numFmt.push(r + ',' + c + ',' + (nr || 1) + 'x' + (nc || 1) + '=' + f); return this; },
-    setFontWeight(x) { s.fmt.push(x); return this; }, setBackground(x) { s.fmt.push(x); return this; }, setFontColor(x) { s.fmt.push(x); return this; }
-  });
+  s.setColumnWidth = (c, w) => { s.widths[c] = w; };
+  s.inserted = [];
+  s.insertRowsAfter = (after, n) => { s.inserted.push(after + '+' + n); s.maxRows += n; return s; };
+  s.clear = () => { s.cleared++; s.rows = []; s.formulas = {}; s.numFmt = []; s.fmt = []; s.borders = []; return s; };
+  s.getConditionalFormatRules = () => s.cfRules.slice();
+  s.setConditionalFormatRules = rules => { s.cfRules = rules.slice(); };
+  s.getDeveloperMetadata = () => s.meta.map(m => ({ getKey: () => m.key, getValue: () => m.value }));
+  s.addDeveloperMetadata = (key, value) => { s.meta.push({ key, value }); return s; };
+  s.getProtections = type => s.protections.filter(p => p.type === type);
+  s.protect = () => {
+    const p = { type: 'SHEET', desc: '', warningOnly: false, editors: ['ban-dau@vi-du.vn', 'chu-file@vi-du.vn'], domainEdit: true, unprotected: [], removed: false };
+    p.setDescription = d => { p.desc = d; return p; };
+    p.getDescription = () => p.desc;
+    p.setWarningOnly = w => { p.warningOnly = w; return p; };
+    p.addEditor = u => { const e = u.getEmail(); if (!p.editors.includes(e)) p.editors.push(e); return p; };
+    p.getEditors = () => p.editors.map(e => ({ getEmail: () => e }));
+    /* Như Google: không gỡ được chủ file */
+    p.removeEditors = list => { const out = list.map(u => u.getEmail()); p.editors = p.editors.filter(e => e === 'chu-file@vi-du.vn' || !out.includes(e)); return p; };
+    p.canDomainEdit = () => p.domainEdit;
+    p.setDomainEdit = v => { p.domainEdit = v; return p; };
+    p.setUnprotectedRanges = rs => { p.unprotected = rs.map(r => r.a1); return p; };
+    p.remove = () => { p.removed = true; s.protections = s.protections.filter(x => x !== p); };
+    s.protections.push(p);
+    return p;
+  };
+  s.getRange = (r0, c0, nr0, nc0) => {
+    let r = r0, c = c0, nr = nr0, nc = nc0, a1 = null;
+    if (typeof r0 === 'string') { a1 = r0; [r, c, nr, nc] = parseA1(r0); }
+    /* Như Google: vùng vượt số hàng của tab → lỗi (appendRow mới tự thêm hàng, getRange thì không) */
+    if (r < 1 || r + (nr || 1) - 1 > s.maxRows) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
+    return {
+      a1: a1 || (r + ',' + c),
+      getValues: () => Array.from({ length: nr || 1 }, (_, i) => Array.from({ length: nc || 1 }, (_, j) => { const row = s.rows[r - 1 + i] || []; return row[c - 1 + j] == null ? '' : row[c - 1 + j]; })),
+      setValues(vals) { vals.forEach((v, i) => { const row = s.rows[r - 1 + i] || (s.rows[r - 1 + i] = []); v.forEach((x, j) => { row[c - 1 + j] = x; }); }); return this; },
+      getValue: () => { const row = s.rows[r - 1] || []; return row[c - 1] == null ? '' : row[c - 1]; },
+      setValue(x) { const row = s.rows[r - 1] || (s.rows[r - 1] = []); row[c - 1] = x; return this; },
+      setFormula(f) { s.formulas[a1 || (r + ',' + c)] = f; return this; },
+      setNumberFormat(f) { s.numFmt.push((a1 ? a1 + ',' : '') + r + ',' + c + ',' + (nr || 1) + 'x' + (nc || 1) + '=' + f); return this; },
+      setBorder() { s.borders.push(a1); return this; },
+      setFontWeight(x) { s.fmt.push(x); return this; }, setBackground(x) { s.fmt.push((a1 ? a1 + ':' : '') + x); return this; }, setFontColor(x) { s.fmt.push(x); return this; }
+    };
+  };
   return s;
+}
+/* Trình dựng quy tắc định dạng có điều kiện giả lập.
+   localize = true: getCriteriaValues trả công thức kiểu Google có thể trả khi Sheet đặt ngôn ngữ Việt
+   (dấu phân cách ";" và có khoảng trắng) – không còn trùng nguyên chuỗi đã đặt. */
+const localized = f => f.replace(/,/g, '; ').replace(/\(/g, '( ');
+function newRule(localize) {
+  const st = { formula: null, bg: null, ranges: [] };
+  const b = {
+    whenFormulaSatisfied: f => { st.formula = f; return b; },
+    setBackground: c => { st.bg = c; return b; },
+    setRanges: rs => { st.ranges = rs.map(r => r.a1); return b; },
+    build: () => ({ formula: st.formula, bg: st.bg, ranges: st.ranges, getBooleanCondition: () => ({ getCriteriaValues: () => [localize ? localized(st.formula) : st.formula] }) })
+  };
+  return b;
 }
 
 function load(opts) {
@@ -50,9 +110,23 @@ function load(opts) {
     insertSheet: n => (sheets[n] = makeSheet(n)),
     getActiveSheet: () => active
   };
+  const ui = { menus: [], alerts: [], noUi: !!o.noUi };
   const lock = { waits: 0, held: 0, max: 0, fail: !!o.lockFail };
   const sandbox = {
-    SpreadsheetApp: { getActiveSpreadsheet: () => ss },
+    SpreadsheetApp: {
+      getActiveSpreadsheet: () => ss,
+      newConditionalFormatRule: () => newRule(!!o.localizeCF),
+      ProtectionType: { SHEET: 'SHEET', RANGE: 'RANGE' },
+      BorderStyle: { SOLID_MEDIUM: 'SOLID_MEDIUM' },
+      getUi: () => {
+        if (ui.noUi) throw new Error('Cannot call SpreadsheetApp.getUi() from this context.');
+        return {
+          alert: m => { ui.alerts.push(m); },
+          createMenu: name => { const m = { name, items: [], added: false }; const api = { addItem: (label, fn) => { m.items.push([label, fn]); return api; }, addToUi: () => { m.added = true; ui.menus.push(m); } }; return api; }
+        };
+      }
+    },
+    Session: { getEffectiveUser: () => ({ getEmail: () => 'chu-file@vi-du.vn' }) },
     ContentService: { MimeType: { JSON: 'json', JAVASCRIPT: 'js' }, createTextOutput: t => ({ text: t, mime: null, setMimeType(m) { this.mime = m; return this; }, getContent() { return this.text; } }) },
     LockService: { getScriptLock: () => ({ waitLock() { if (lock.fail) throw new Error('Lock timeout'); lock.waits++; lock.held++; lock.max = Math.max(lock.max, lock.held); }, releaseLock() { lock.held--; } }) },
     /* Ghi kèm mốc thời gian để test biết giờ lấy từ đâu */
@@ -65,7 +139,7 @@ function load(opts) {
   if (o.setup) o.setup(sheets, s => { active = s; });
   const P = body => JSON.parse(sandbox.doPost({ postData: { contents: typeof body === 'string' ? body : JSON.stringify(body) } }).getContent());
   const G = p => sandbox.doGet({ parameter: p || {} });
-  return { sandbox, sheets, lock, P, G, setActive: s => { active = s; } };
+  return { sandbox, sheets, lock, ui, P, G, setActive: s => { active = s; } };
 }
 
 const sid = n => 'sess-0000-' + String(n).padStart(4, '0');
@@ -226,7 +300,7 @@ const noFormula = sh => sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(
     ['level 2.5', Object.assign({}, OK, { level: 2.5 }), 'level_invalid'],
     ['level "abc"', Object.assign({}, OK, { level: 'abc' }), 'level_invalid'],
     ['cảm xúc rỗng', Object.assign({}, OK, { part2: '' }), 'emotion_required'],
-    ['cảm xúc ngoài 6 nhãn', Object.assign({}, OK, { part2: 'Hạnh phúc' }), 'emotion_invalid'],
+    ['cảm xúc ngoài 9 nhãn', Object.assign({}, OK, { part2: 'Hạnh phúc' }), 'emotion_invalid'],
     ['cảm xúc là công thức', Object.assign({}, OK, { part2: '@SUM(A1)' }), 'emotion_invalid'],
     ['sessionId có ký tự lạ', Object.assign({}, OK, { sessionId: '=1+1+1+1+1+1' }), 'session_invalid'],
     ['sessionId bắt đầu bằng "-"', Object.assign({}, OK, { sessionId: '-abcdefgh' }), 'session_invalid'],
@@ -276,6 +350,192 @@ const noFormula = sh => sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(
   T('Tab có tiêu đề B1 anh tự đặt (khác "Số điện thoại") → giữ nguyên chữ của anh', env3.sheets.CheckIn.rows[0][1] === 'Mã BN (anh tự đặt)');
 }
 
+/* ===== 9 cảm xúc (02/11/2026): 3 nhãn mới nhận đúng, chuỗi lạ/gần giống vẫn bị từ chối ===== */
+{
+  const env = load();
+  const NINE = ['Vui vẻ', 'Đau khổ', 'Lo lắng', 'Tức giận', 'Hoảng hốt', 'Khó chịu', 'Mệt mỏi', 'Bình an', 'Cô đơn'];
+  T('EMOTION_LABELS đúng 9 nhãn theo bộ ảnh mới, đúng thứ tự anh duyệt', JSON.stringify(env.sandbox.EMOTION_LABELS) === JSON.stringify(NINE), JSON.stringify(env.sandbox.EMOTION_LABELS));
+  const got = NINE.map((e, i) => { const r = env.P(Object.assign({}, OK, { sessionId: sid(300 + i), part2: e })); const row = env.sheets.CheckIn.rows[env.sheets.CheckIn.rows.length - 1]; return { e, ok: r.result === 'success' && row[3] === e }; });
+  T('9 cảm xúc đều ghi được, cột D đúng nguyên chuỗi', got.every(g => g.ok), got.filter(g => !g.ok).map(g => g.e).join(', '));
+  /* Web bản 01/11 đang chạy (và hàng chờ trên máy chị) còn gửi "Buồn": phải nhận, ghi NGUYÊN chữ */
+  const legacy = env.P(Object.assign({}, OK, { sessionId: sid(319), part2: 'Buồn' }));
+  T('Nhãn cũ "Buồn" (web bản cũ, hàng chờ cũ) vẫn nhận, cột D ghi nguyên "Buồn" (không tự đổi thành "Đau khổ")', legacy.result === 'success' && env.sheets.CheckIn.rows[env.sheets.CheckIn.rows.length - 1][3] === 'Buồn', JSON.stringify(legacy));
+  T('Nhãn cũ nằm riêng (LEGACY_EMOTION_LABELS = ["Buồn"]), không lẫn vào 9 nhãn web hiển thị', JSON.stringify(env.sandbox.LEGACY_EMOTION_LABELS) === '["Buồn"]' && env.sandbox.EMOTION_LABELS.indexOf('Buồn') < 0);
+  const padded = env.P(Object.assign({}, OK, { sessionId: sid(320), part2: '  Mệt mỏi  ' }));
+  T('Khoảng trắng hai đầu được bỏ ("  Mệt mỏi  " → "Mệt mỏi")', padded.result === 'success' && env.sheets.CheckIn.rows[env.sheets.CheckIn.rows.length - 1][3] === 'Mệt mỏi');
+  /* Tên nháp chưa từng lên mạng ("Bình yên", "Tủi thân, cô đơn") và chuỗi gần giống đều bị từ chối */
+  const odd = ['Bình yên', 'Tủi thân, cô đơn', 'Tủi thân', 'Cô Đơn', 'cô đơn', 'Co don', 'Đau', 'Đau khổ!', 'Bình an,', 'Mệt', 'Khóc', 'Hạnh phúc', 'buồn', '=HYPERLINK("x")', 'Vui vẻ\nBuồn', 'Mệt mỏi, Bình an', 'Cô đơn '];
+  const before = env.sheets.CheckIn.rows.length;
+  const rej = odd.map((e, i) => { const r = env.P(Object.assign({}, OK, { sessionId: sid(330 + i), part2: e })); return { e, ok: r.error === 'emotion_invalid' || (e === 'Cô đơn ' && r.result === 'success') }; });
+  T(odd.length + ' chuỗi lạ / tên nháp ("Bình yên", "Tủi thân, cô đơn"), viết hoa/thường khác, không dấu, "buồn", công thức, hai nhãn ghép… → emotion_invalid', rej.every(r => r.ok), rej.filter(r => !r.ok).map(r => JSON.stringify(r.e)).join(', '));
+  T('Chuỗi lạ không thêm dòng (chỉ "Cô đơn " có khoảng trắng cuối được bỏ khoảng trắng rồi nhận)', env.sheets.CheckIn.rows.length === before + 1, env.sheets.CheckIn.rows.length - before);
+  T('Không ô nào bắt đầu bằng = + - @', noFormula(env.sheets.CheckIn));
+}
+
+/* ===== Menu cài một lần: tô màu + Tổng hợp + Tra cứu + khóa (02/11/2026) ===== */
+{
+  /* Tab CheckIn có sẵn: tiêu đề, 1 dòng SĐT ngày 30/10 (dòng lạ), 1 dòng mới, và 1 quy tắc màu anh tự đặt */
+  const env = load();
+  const ck = env.sheets.CheckIn = makeSheet('CheckIn');
+  ck.rows.push(NEW_HEADER.split('|'), ['08:00:00 30/10/2026', '0911111111', '2 - Rất tồi tệ', 'Buồn', sid(500)], ['09:00:00 02/11/2026', '0012345', '7 - Tốt', 'Mệt mỏi', sid(501)]);
+  const foreign = { formula: '=$D2="Vui vẻ"', bg: '#000000', ranges: ['D2:D10'], getBooleanCondition: () => ({ getCriteriaValues: () => ['=$D2="Vui vẻ"'] }) };
+  ck.cfRules.push(foreign);
+  const dataBefore = JSON.stringify(ck.rows);
+  const sb = env.sandbox;
+
+  /* onOpen: thêm menu "Check-in" trỏ đúng hàm có thật */
+  sb.onOpen();
+  const menu = env.ui.menus[0] || { items: [] };
+  T('onOpen: thêm menu "Check-in" → "Cài tô màu + Tổng hợp + Tra cứu" gọi caiDatBangBacSi (hàm có thật, tên không kết thúc "_")', menu.name === 'Check-in' && menu.added && menu.items.length === 1 && menu.items[0][0] === 'Cài tô màu + Tổng hợp + Tra cứu' && menu.items[0][1] === 'caiDatBangBacSi' && typeof sb.caiDatBangBacSi === 'function', JSON.stringify(menu));
+  T('Nguồn: doPost KHÔNG gọi phần cài đặt (không tô màu, không khóa, không tạo tab mỗi lượt)', !/caiDatBangBacSi|applyAlertColors_|lockSheet_|ownTab_|setConditionalFormatRules|protect\(/.test(/function doPost[\s\S]*?\n}/.exec(SRC)[0]));
+
+  const res = sb.caiDatBangBacSi();
+  T('Chạy menu: trả kết quả đủ 3 phần, khóa 3 tab', res.checkinRules === 3 && res.summary && res.lookup && JSON.stringify(res.locks) === JSON.stringify(['CheckIn', 'Tổng hợp', 'Tra cứu']), JSON.stringify(res));
+  T('Chạy menu: hộp thoại "Đã cài xong" cho anh', env.ui.alerts.length === 1 && /^Đã cài xong/.test(env.ui.alerts[0]), env.ui.alerts.join(' | '));
+  T('Chạy menu: chờ khóa LockService và nhả khóa (không chen lúc doPost ghi)', env.lock.waits === 1 && env.lock.held === 0);
+  T('Tab CheckIn: KHÔNG đổi dữ liệu, tiêu đề, số cột (không thêm cột F)', JSON.stringify(ck.rows) === dataBefore && ck.rows.every(r => r.length === 5), JSON.stringify(ck.rows[0]));
+
+  /* a) Quy tắc màu tab CheckIn */
+  const ours = ck.cfRules.filter(r => r !== foreign);
+  const want = [['#F4CCCC', 1, 3], ['#FFF2CC', 4, 5], ['#D9EAD3', 6, 10]];
+  const N = 'IFERROR(VALUE(LEFT($C2&" ",FIND(" ",$C2&" ")-1)),0)';
+  T('CheckIn: nới tab lên 20 000 hàng (thêm hàng trống ở cuối) rồi mới đặt vùng tô màu (B-02)', ck.maxRows === 20000 && ck.inserted[0] === '1000+19000', JSON.stringify({ max: ck.maxRows, ins: ck.inserted }));
+  T('CheckIn: 3 quy tắc tô CẢ DÒNG A2:D20000 theo số đầu cột C – ĐỎ nhạt 1–3, VÀNG nhạt 4–5, XANH lá nhạt 6–10',
+    ours.length === 3 && ours.every((r, i) => r.bg === want[i][0] && r.formula === '=AND(' + N + '>=' + want[i][1] + ',' + N + '<=' + want[i][2] + ')' && JSON.stringify(r.ranges) === '["A2:D20000"]'),
+    JSON.stringify(ours.map(r => [r.bg, r.ranges, r.formula])));
+  T('CheckIn: giữ nguyên quy tắc màu anh tự đặt', ck.cfRules[0] === foreign);
+  T('CheckIn: công thức tô màu chỉ dùng hàm Excel cũng có (tải .xlsx giữ màu) và chỉ đọc cột C (cảm xúc không đổi màu)',
+    ours.every(r => { const fns = (r.formula.match(/[A-Z]+(?=\()/g) || []); return fns.every(f => ['AND', 'IFERROR', 'VALUE', 'LEFT', 'FIND'].includes(f)) && !/\$[ABDE]\d/.test(r.formula); }));
+  /* Mô phỏng công thức tô màu bằng JS (cùng luật LEFT/FIND/VALUE) trên các ô cột C có thể gặp, kể cả dòng lạ */
+  const num = c => { const t = String(c) + ' '; const v = t.slice(0, t.indexOf(' ')); return /^\d+(\.\d+)?$/.test(v) ? Number(v) : 0; };
+  const band = c => { const n = num(c); return n >= 1 && n <= 3 ? 'ĐỎ' : n >= 4 && n <= 5 ? 'VÀNG' : n >= 6 && n <= 10 ? 'XANH' : '-'; };
+  const cases = [['1 - Tuyệt vọng', 'ĐỎ'], ['3 - Tồi tệ', 'ĐỎ'], ['4 - Kém', 'VÀNG'], ['5 - Bình thường (Ổn)', 'VÀNG'], ['6 - Tương đối tốt', 'XANH'], ['10 - Rất tuyệt vời', 'XANH'], ['', '-'], ['Bình thường', '-'], ['7', 'XANH'], ['11 - lạ', '-']];
+  const bad = cases.filter(([c, w]) => band(c) !== w);
+  T('Luật tô màu (mô phỏng): "3 - Tồi tệ"→ĐỎ, "4 - Kém"→VÀNG, "10 - Rất tuyệt vời"→XANH; ô trống/dòng lạ không màu', bad.length === 0, bad.map(b => b[0] + '→' + band(b[0])).join(', '));
+
+  /* b) Tab Tổng hợp */
+  const th = env.sheets['Tổng hợp'];
+  const thF = th && th.formulas.A2 || '';
+  T('Tổng hợp: tạo tab, gắn dấu ẩn "do menu tạo", tiêu đề 6 cột, đóng băng hàng 1',
+    !!th && th.meta.some(m => m.key === 'checkin_me_bau_tab' && m.value === 'tong_hop') && JSON.stringify(th.rows[0]) === JSON.stringify(['Mã số BN', 'Lượt gần nhất (giờ)', 'Mức gần nhất', 'Cảm xúc gần nhất', 'Số lượt', 'Số lượt ĐỎ trong 14 ngày']) && th.frozen === 1,
+    th && JSON.stringify(th.rows[0]));
+  T('Tổng hợp: A2 là MỘT công thức tự cập nhật đọc tab CheckIn (LET, SORTN giữ lượt mới nhất, QUERY đếm, 14 ngày, mới nhất trên cùng)',
+    /^=LET\(/.test(thF) && /'CheckIn'!A2:A/.test(thF) && /'CheckIn'!B2:B/.test(thF) && /SORTN\(SORT\(FILTER\(\{maSo,thoiGian,mucTxt,camXuc,tg\},coMa\),5,FALSE\),9\^9,2,1,TRUE\)/.test(thF) && /NOW\(\)-14/.test(thF) && /\(mucSo>=1\)\*\(mucSo<=3\)/.test(thF) && /group by Col1/.test(thF), thF.slice(0, 200));
+  T('Tổng hợp: mã số so khớp đúng CHUỖI (TO_TEXT + VLOOKUP chính xác, không COUNTIF – COUNTIF coi "0012345" = "012345")',
+    /maSo,ARRAYFORMULA\(TO_TEXT\('CheckIn'!B2:B\)\)/.test(thF) && /VLOOKUP\(ids,dem,2,FALSE\)/.test(thF) && !/COUNTIF/.test(thF));
+  T('Tổng hợp: chịu dòng lạ – giờ khác dạng → IFERROR, mức không có số → 0, bảng trống → "Chưa có lượt check-in nào."',
+    /ISNUMBER\(thoiGian\)/.test(thF) && /IFERROR\(VALUE\(REGEXEXTRACT\(TO_TEXT\(mucTxt\),"\^\\d\+"\)\),0\)/.test(thF) && /"Chưa có lượt check-in nào\."\)\)$/.test(thF));
+  const thCF = th ? th.cfRules : [];
+  T('Tổng hợp: nới 20 000 hàng, tô màu cả dòng A2:F20000 theo "Mức gần nhất" (cột C), cùng 3 màu', th.maxRows === 20000 && thCF.length === 3 && thCF.every((r, i) => r.bg === want[i][0] && JSON.stringify(r.ranges) === '["A2:F20000"]' && r.formula.includes('$C2')), JSON.stringify(thCF.map(r => [r.bg, r.ranges])));
+
+  /* d) Tab Tra cứu */
+  const tc = env.sheets['Tra cứu'];
+  const tcF = tc && tc.formulas.A6 || '';
+  T('Tra cứu: tạo tab có dấu ẩn, A2 "Nhập mã số BN", ô B2 nền vàng nhạt + viền, dạng văn bản @ (giữ số 0 đầu)',
+    !!tc && tc.meta.some(m => m.key === 'checkin_me_bau_tab' && m.value === 'tra_cuu') && tc.rows[1] && tc.rows[1][0] === 'Nhập mã số BN' && tc.fmt.includes('B2:#FFF59D') && tc.borders.includes('B2') && tc.numFmt.some(f => f.startsWith('B2,') && f.endsWith('=@')),
+    tc && JSON.stringify({ r2: tc.rows[1], fmt: tc.fmt, nf: tc.numFmt }));
+  T('Tra cứu: hàng 5 tiêu đề Thời gian · Mức · Cảm xúc · Cảnh báo', tc && JSON.stringify(tc.rows[4]) === JSON.stringify(['Thời gian', 'Mức', 'Cảm xúc', 'Cảnh báo']), tc && JSON.stringify(tc.rows[4]));
+  T('Tra cứu: A6 lọc mọi lượt của mã ở B2 (FILTER maSo=ma), mới nhất trên cùng (SORT theo giờ giảm dần)',
+    /^=LET\(ma,REGEXREPLACE\(TO_TEXT\(B2\),"\[\\s\.\\-\]",""\)/.test(tcF) && /SORT\(FILTER\(\{thoiGian,mucTxt,camXuc,canhBao\},maSo=ma\),FILTER\(tg,maSo=ma\),FALSE\)/.test(tcF), tcF.slice(0, 160));
+  T('Tra cứu: cột Cảnh báo ĐỎ ≤3 / VÀNG ≤5 / XANH ≤10 theo số mức', /IF\(mucSo<1,"",IF\(mucSo<=3,"ĐỎ",IF\(mucSo<=5,"VÀNG",IF\(mucSo<=10,"XANH",""\)\)\)\)/.test(tcF));
+  T('Tra cứu: ô trống → hướng dẫn ngắn; mã sai dạng → nhắc chỉ chữ số; mã không có → "Chưa có lượt check-in nào…" (không #N/A)',
+    /IF\(ma="","Gõ mã số bệnh nhân vào ô B2 rồi bấm Enter\."/.test(tcF) && /REGEXMATCH\(ma,"\^\\d\{3,20\}\$"\)/.test(tcF) && /IFERROR\(SORT\([\s\S]*"Chưa có lượt check-in nào với mã số này\."\)\)\)\)$/.test(tcF));
+  const tcCF = tc ? tc.cfRules : [];
+  T('Tra cứu: tô màu kết quả A6:D1000 theo cột Mức (B), cùng 3 màu', tcCF.length === 3 && tcCF.every((r, i) => r.bg === want[i][0] && JSON.stringify(r.ranges) === '["A6:D1000"]' && r.formula.includes('$B6')), JSON.stringify(tcCF.map(r => [r.bg, r.ranges])));
+  /* Mô phỏng phần bỏ khoảng trắng/chấm/gạch của ô tra cứu bằng JS (cùng biểu thức) */
+  const strip = v => String(v).replace(/[\s.\-]/g, '');
+  T('Tra cứu (mô phỏng): "0012 345", "001.2345", "0012-345" → "0012345" (giữ số 0 đầu, khớp đúng chuỗi cột B)', ['0012 345', '001.2345', '0012-345', ' 0012345 '].every(v => strip(v) === '0012345') && strip('012345') !== '0012345');
+
+  /* LET: tên biến không được giống địa chỉ ô (ví dụ "do14" = ô DO14 → Sheets báo lỗi) */
+  const letNames = f => [...f.matchAll(/[(,]([A-Za-z][A-Za-z0-9]*),(?=[^,])/g)].map(m => m[1]).filter(n => /^(thoiGian|maSo|mucTxt|camXuc|tg|mucSo|soDo|coMa|ganNhat|dem|ids|canhBao|ma)$/.test(n) || /\d/.test(n));
+  const cellLike = [...new Set(letNames(thF).concat(letNames(tcF)))].filter(n => /^[A-Za-z]{1,3}\d+$/.test(n));
+  T('Công thức LET: không tên biến nào giống địa chỉ ô (kiểu DO14)', cellLike.length === 0, cellLike.join(','));
+  T('Công thức Tổng hợp/Tra cứu: chỉ ghép chuỗi cố định + tên tab, không có dữ liệu người dùng (không chứa mã số/cảm xúc của dòng)', !/0911111111|0012345|Mệt mỏi|Rất tồi tệ/.test(thF + tcF));
+
+  /* Khóa cứng */
+  const pr = sh => sh.protections.filter(p => p.desc === 'Check-in Mẹ Bầu: chỉ chủ file sửa (menu Check-in tạo)');
+  const pk = pr(ck)[0] || {}, pt = pr(th)[0] || {}, pc = pr(tc)[0] || {};
+  T('Khóa: tab CheckIn khóa cứng (không chỉ cảnh báo), chỉ còn chủ file, tắt quyền sửa theo tên miền', pr(ck).length === 1 && pk.warningOnly === false && JSON.stringify(pk.editors) === '["chu-file@vi-du.vn"]' && pk.domainEdit === false, JSON.stringify(pk));
+  T('Khóa: tab Tổng hợp khóa cứng, chỉ chủ file', pr(th).length === 1 && pt.warningOnly === false && JSON.stringify(pt.editors) === '["chu-file@vi-du.vn"]' && pt.unprotected.length === 0);
+  T('Khóa: tab Tra cứu khóa cứng, CHỈ ô B2 để mở', pr(tc).length === 1 && pc.warningOnly === false && JSON.stringify(pc.editors) === '["chu-file@vi-du.vn"]' && JSON.stringify(pc.unprotected) === '["B2"]', JSON.stringify(pc.unprotected));
+
+  /* Sau khi khóa, doPost (chạy bằng tài khoản chủ file) vẫn ghi được, không đụng tab khác */
+  const r = env.P(Object.assign({}, OK, { sessionId: sid(510), part2: 'Bình an' }));
+  T('Sau khi cài: doPost vẫn ghi vào CheckIn, không đụng Tổng hợp/Tra cứu', r.result === 'success' && ck.rows.length === 4 && ck.rows[3][3] === 'Bình an' && th.rows.length === 1 && Object.keys(th.formulas).join() === 'A2', JSON.stringify(r));
+
+  /* Chạy lại: kết quả y hệt, không nhân đôi quy tắc/khóa */
+  sb.caiDatBangBacSi();
+  T('Chạy lại menu: CheckIn vẫn đúng 1 quy tắc anh tự đặt + 3 quy tắc của menu, 1 khóa, không nới thêm hàng', ck.cfRules.length === 4 && ck.cfRules[0] === foreign && pr(ck).length === 1 && ck.maxRows === 20000 && ck.inserted.length === 1, ck.cfRules.length + ' quy tắc, ' + pr(ck).length + ' khóa, ' + ck.maxRows + ' hàng');
+  T('Chạy lại menu: Tổng hợp/Tra cứu dựng lại (xóa rồi ghi), vẫn 3 quy tắc, 1 khóa mỗi tab, công thức không đổi', th.cleared === 1 && tc.cleared === 1 && th.cfRules.length === 3 && tc.cfRules.length === 3 && pr(th).length === 1 && pr(tc).length === 1 && th.formulas.A2 === thF && tc.formulas.A6 === tcF);
+  T('Chạy lại menu: dữ liệu CheckIn vẫn nguyên', ck.rows.length === 4 && ck.rows[1][1] === '0911111111');
+}
+
+/* Tab "Tổng hợp"/"Tra cứu" do anh tự tạo (không có dấu ẩn) → không ghi đè; CheckIn đã có khóa riêng của anh → giữ */
+{
+  const env = load({ noUi: true });
+  const mine = env.sheets['Tổng hợp'] = makeSheet('Tổng hợp');
+  mine.rows.push(['Bảng anh tự làm']);
+  const ck = env.sheets.CheckIn = makeSheet('CheckIn');
+  ck.rows.push(NEW_HEADER.split('|'));
+  const own = ck.protect().setDescription('khóa của anh');
+  const res = env.sandbox.caiDatBangBacSi();
+  T('Tab "Tổng hợp" anh tự tạo: KHÔNG ghi đè, không khóa, báo anh đổi tên', !res.summary && mine.rows[0][0] === 'Bảng anh tự làm' && mine.cleared === 0 && mine.protections.length === 0 && res.lookup, JSON.stringify(res));
+  T('CheckIn đã có khóa riêng của anh: giữ nguyên, không thêm khóa thứ hai', ck.protections.length === 1 && ck.protections[0] === own && !res.locks.includes('CheckIn'), JSON.stringify(res.locks));
+  T('Chạy từ editor (không có giao diện Sheet): không lỗi, vẫn cài tô màu', res.checkinRules === 3);
+}
+{
+  const env = load();
+  const res = env.sandbox.caiDatBangBacSi();
+  T('Sheet chưa có tab CheckIn: menu tự tạo CheckIn (5 tiêu đề, ẩn E) rồi cài đủ', !!env.sheets.CheckIn && env.sheets.CheckIn.rows[0].join('|') === NEW_HEADER && env.sheets.CheckIn.hidden.includes(5) && res.summary && res.lookup && res.locks.length === 3, JSON.stringify(res));
+}
+
+/* Sheet đặt ngôn ngữ Việt: Google có thể trả công thức tô màu với ";" và khoảng trắng → chạy lại menu không nhân đôi (gợi ý 1 review) */
+{
+  const env = load({ localizeCF: true });
+  const ck = env.sheets.CheckIn = makeSheet('CheckIn');
+  ck.rows.push(NEW_HEADER.split('|'));
+  const foreign = { formula: '=$C2="7 - Tốt"', bg: '#000000', ranges: ['C2:C9'], getBooleanCondition: () => ({ getCriteriaValues: () => ['=$C2 = "7 - Tốt"'] }) };
+  ck.cfRules.push(foreign);
+  env.sandbox.caiDatBangBacSi();
+  const crit = ck.cfRules[1].getBooleanCondition().getCriteriaValues()[0];
+  env.sandbox.caiDatBangBacSi();
+  env.sandbox.caiDatBangBacSi();
+  T('Công thức trả về kiểu "; " (khác nguyên chuỗi đã đặt) – chạy menu 3 lần: CheckIn vẫn 1 quy tắc của anh + 3 của menu', /; /.test(crit) && ck.cfRules.length === 4 && ck.cfRules[0] === foreign, ck.cfRules.length + ' quy tắc; mẫu: ' + crit.slice(0, 60));
+  T('… Tổng hợp và Tra cứu vẫn đúng 3 quy tắc mỗi tab', env.sheets['Tổng hợp'].cfRules.length === 3 && env.sheets['Tra cứu'].cfRules.length === 3);
+  T('isOurRule_: quy tắc anh tự đặt trên cột C (không có đoạn lấy số mức) KHÔNG bị nhận nhầm', env.sandbox.isOurRule_(foreign, '$C2') === false && env.sandbox.isOurRule_(ck.cfRules[1], '$C2') === true && env.sandbox.isOurRule_(ck.cfRules[1], '$B6') === false);
+}
+{
+  const env = load();
+  const ck = env.sheets.CheckIn = makeSheet('CheckIn');
+  ck.rows.push(NEW_HEADER.split('|'));
+  ck.maxRows = 25000;
+  env.sandbox.caiDatBangBacSi();
+  T('Tab đã có 25 000 hàng: menu không thêm hàng, vùng tô màu A2:D25000', ck.inserted.length === 0 && ck.cfRules.every(r => JSON.stringify(r.ranges) === '["A2:D25000"]'), JSON.stringify(ck.cfRules.map(r => r.ranges)));
+}
+
+/* ===== B-01 (anh duyệt 02/11/2026): tab CheckIn hết hàng trống → doPost thêm 500 hàng rồi ghi, giữ định dạng @ ===== */
+{
+  const env = load();
+  const ck = env.sheets.CheckIn = makeSheet('CheckIn');
+  ck.maxRows = 3;
+  ck.rows.push(NEW_HEADER.split('|'), ['08:00:00 01/11/2026', '26012345', '7 - Tốt', 'Vui vẻ', sid(600)], ['08:01:00 01/11/2026', '26012345', '6 - Tương đối tốt', 'Buồn', sid(601)]);
+  const r = env.P(Object.assign({}, OK, { sessionId: sid(602), patientId: '0012345', part2: 'Cô đơn' }));
+  T('maxRows 3, đã đủ 3 hàng: doPost vẫn inserted vào hàng 4, thêm 500 hàng (insertRowsAfter(3, 500))', r.result === 'success' && r.action === 'inserted' && ck.rows.length === 4 && ck.rows[3][1] === '0012345' && ck.rows[3][3] === 'Cô đơn' && JSON.stringify(ck.inserted) === '["3+500"]' && ck.maxRows === 503, JSON.stringify(r) + ' ' + JSON.stringify(ck.inserted));
+  T('… dòng mới vẫn đặt định dạng @ (giữ số 0 đầu), không đổi sang appendRow', ck.numFmt.includes('4,1,1x5=@') && !/appendRow\(row\)/.test(/function doPost[\s\S]*?\n}/.exec(SRC)[0]), ck.numFmt.join(' '));
+  const r2 = env.P(Object.assign({}, OK, { sessionId: sid(603) }));
+  T('… lượt sau (còn hàng trống) không thêm hàng nữa', r2.result === 'success' && ck.inserted.length === 1 && ck.rows.length === 5);
+  const r3 = env.P(Object.assign({}, OK, { sessionId: sid(602), patientId: '0012345', level: 9, part2: 'Bình an' }));
+  T('… cùng Mã phiên vẫn cập nhật đúng dòng 4, không thêm hàng', r3.action === 'updated' && ck.rows[3][2] === '9 - Tuyệt vời' && ck.rows.length === 5 && ck.inserted.length === 1);
+  /* Tab mới (insertSheet, 1000 hàng): lượt thứ 1000 (hàng 1001) vẫn ghi */
+  const env2 = load();
+  env2.P(OK);
+  const t2 = env2.sheets.CheckIn;
+  for (let i = 1; i < 999; i++) t2.rows.push(['08:00:00 01/11/2026', '26012345', '7 - Tốt', 'Vui vẻ', 'old-' + String(i).padStart(6, '0')]);
+  const before = t2.rows.length;
+  const r4 = env2.P(Object.assign({}, OK, { sessionId: sid(700) }));
+  T('Tab 1000 hàng đã đầy: lượt mới ghi vào hàng 1001, tab thành 1500 hàng', before === 1000 && r4.result === 'success' && t2.rows.length === 1001 && t2.maxRows === 1500, JSON.stringify(r4) + ' rows=' + t2.rows.length + ' max=' + t2.maxRows);
+}
+
 /* ===== Nhãn khớp với script.js ===== */
 {
   const js = fs.readFileSync(path.join(APP, 'script.js'), 'utf8');
@@ -283,8 +543,10 @@ const noFormula = sh => sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(
   for (const m of js.matchAll(/^\s*(\d+):\s*\{\s*text:\s*"([^"]*)"/mg)) levels[Number(m[1])] = m[2];
   const env = load();
   T('LEVEL_TEXTS trùng emotionLevels trong script.js', JSON.stringify(env.sandbox.LEVEL_TEXTS.slice(1)) === JSON.stringify(levels.slice(1)), JSON.stringify(levels));
+  /* Lấy từng chuỗi trong nháy đơn (không tách theo dấu phẩy, phòng nhãn có dấu phẩy) */
   const emo = (js.match(/const EMOTIONS = \[([^\]]*)\]/) || [])[1] || '';
-  T('EMOTION_LABELS trùng EMOTIONS trong script.js', JSON.stringify(env.sandbox.EMOTION_LABELS) === JSON.stringify(emo.split(',').map(x => x.trim().replace(/^'|'$/g, ''))), emo);
+  const emoList = [...emo.matchAll(/'([^']*)'/g)].map(m => m[1]);
+  T('EMOTION_LABELS trùng EMOTIONS trong script.js (9 nhãn, đúng thứ tự)', emoList.length === 9 && JSON.stringify(env.sandbox.EMOTION_LABELS) === JSON.stringify(emoList), emo);
   /* normalizePatientId hai phía phải cho cùng kết quả */
   const clientFn = (js.match(/function normalizePatientId\(raw\) \{[\s\S]*?\n\}/) || [''])[0];
   const ctx = {}; vm.createContext(ctx); vm.runInContext(clientFn, ctx);
@@ -297,7 +559,12 @@ const noFormula = sh => sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(
 /* ===== Nguồn: hướng dẫn cài và các chốt ===== */
 T('Nguồn: hướng dẫn chỉ đúng dự án mới (Sheet bản an toàn 30-10-2026, URL AKfycbzfN8…), cập nhật Phiên bản mới giữ URL', /bản an toàn 30-10-2026/.test(SRC) && /AKfycbzfN8/.test(SRC) && /Phiên bản mới \(New version\)/.test(SRC) && /GIỮ NGUYÊN URL/.test(SRC));
 T('Nguồn: BƯỚC 2 dùng hàm tạm chayThu (Apps Script giấu hàm tên kết thúc "_"), dặn xóa sau khi chạy', /function chayThu\(\) \{ test_\(\); \}/.test(SRC) && /GIẤU các hàm có tên kết thúc bằng dấu gạch dưới/.test(SRC) && /XÓA dòng  function chayThu/.test(SRC) && !/^function chayThu/m.test(SRC));
-T('Nguồn: hướng dẫn nói rõ đổi phone → patientId, làm bước 3–4 liền nhau', /phone → patientId/.test(SRC) && /bước 3–4 liền nhau/.test(SRC));
+T('Nguồn: thứ tự triển khai – Apps Script TRƯỚC, web SAU (web mới gửi nhãn mới; script mới vẫn nhận web cũ, kể cả "Buồn")', /Apps Script TRƯỚC, web SAU/.test(SRC) && /BƯỚC 6 – Đưa web mới lên \(chỉ SAU khi xong BƯỚC 3/.test(SRC));
+T('Nguồn: hướng dẫn chia sẻ cho bác sĩ – Hạn chế, Người xem (Ctrl+F, chế độ xem bộ lọc tạm thời, Tải xuống .xlsx), Người chỉnh sửa (bỏ chọn quyền chia sẻ, dùng chung ô B2)',
+  /Quyền truy cập chung: Hạn chế/.test(SRC) && /"Người xem" \(Viewer\)/.test(SRC) && /Ctrl\+F/.test(SRC) && /Tạo chế độ xem bộ lọc\s*\*?\s*tạm thời/.test(SRC) &&
+  /Tệp \(File\) → Tải xuống \(Download\) → Microsoft Excel \(\.xlsx\)/.test(SRC) && /"Người chỉnh sửa" \(Editor\)/.test(SRC) &&
+  /BỎ chọn "Người chỉnh sửa có thể thay đổi quyền\s*\*?\s*và chia sẻ"/.test(SRC) && /dùng chung MỘT ô B2/.test(SRC) && /Thông báo cho mọi người/.test(SRC));
+T('Nguồn: hướng dẫn nhắc Người chỉnh sửa mở được Apps Script (chỉ cấp cho người tin)', /Người chỉnh sửa của Sheet cũng mở được Tiện ích mở rộng → Apps Script/.test(SRC));
 T('Nguồn: test_ dùng mã số có số 0 đầu và kiểm cột B giữ số 0', /patientId: '0012 345'/.test(SRC) && /b === '0012345'/.test(SRC));
 T('Nguồn: không dùng getActiveSheet()', !/getActiveSheet\(/.test(SRC.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')));
 T('Nguồn: không còn ALLOW_PUBLIC_READ hay đường đọc toàn bảng', !/ALLOW_PUBLIC_READ|readAll_/.test(SRC));

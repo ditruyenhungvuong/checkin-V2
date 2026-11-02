@@ -391,101 +391,136 @@ button {
     transition: color 0.2s ease;
 }
 
-.slider-container {
-    width: 100%;
-    padding: 8px 6px;
+/* Chưa chọn mức: chữ trạng thái trống nhưng giữ chỗ (không nhảy bố cục khi chọn) */
+.emotion-status:empty {
+    min-height: 1.4em;
 }
 
-/* Thanh trượt: phần tử cao 44 px (dễ chạm), rãnh 14 px vẽ ở track, dải màu pastel không đỏ */
-.styled-range {
-    width: 100%;
-    height: 44px;
-    margin: 0;
-    background: transparent;
+/* --- 10 CHẤM MỨC CẢM XÚC (02/11/2026, thay thanh trượt) ---
+   Điện thoại: 2 hàng × 5 chấm; màn ≥ 600 px: 1 hàng 10 chấm. Chấm ≥ 44×44 px.
+   Nền chấm = màu mức (script.js emotionLevels[n].color, ≥ 4,5:1 với chữ trắng). */
+.level-dots {
+    --dot: 46px;
+    display: grid;
+    grid-template-columns: repeat(5, var(--dot));
+    justify-content: center;
+    gap: 12px 14px;
+    margin: 6px auto 0 auto;
+    padding: 8px 4px;
+    border-radius: 18px;
+    border: 2px solid transparent;
+    transition: border-color 0.25s ease, background 0.25s ease;
+}
+
+/* Bấm Hoàn thành mà chưa chọn mức: viền hồng nhẹ quanh nhóm chấm */
+.level-dots.need {
+    border-color: var(--rose-500);
+    background: var(--rose-50);
+}
+
+.level-dot {
+    width: var(--dot);
+    height: var(--dot);
+    border-radius: 50%;
+    border: none;
+    color: #ffffff;
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 3px 8px rgba(150, 70, 100, 0.18);
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
     -webkit-appearance: none;
     appearance: none;
-    cursor: pointer;
 }
 
-.styled-range:focus {
-    outline: none;
+.level-dot[data-level="1"]  { background: #1a237e; }
+.level-dot[data-level="2"]  { background: #4a148c; }
+.level-dot[data-level="3"]  { background: #7d3a55; }
+.level-dot[data-level="4"]  { background: #9c456b; }
+.level-dot[data-level="5"]  { background: #a14d00; }
+.level-dot[data-level="6"]  { background: #8a5a00; }
+.level-dot[data-level="7"]  { background: #7a6400; }
+.level-dot[data-level="8"]  { background: #5b6b00; }
+.level-dot[data-level="9"]  { background: #2e7d32; }
+.level-dot[data-level="10"] { background: #1b5e20; }
+
+.level-dot:hover {
+    transform: scale(1.06);
 }
 
-.styled-range:focus-visible {
+/* Chấm đang chọn: viền trắng + viền hồng đậm bên ngoài, phóng nhẹ */
+.level-dot.selected {
+    transform: scale(1.14);
+    box-shadow: 0 0 0 3px #ffffff, 0 0 0 6px var(--rose-900), 0 6px 14px rgba(150, 70, 100, 0.3);
+}
+
+.level-dot:focus-visible {
     outline: 3px solid var(--focus-ring);
-    outline-offset: 4px;
-    border-radius: 12px;
-}
-
-.styled-range::-webkit-slider-runnable-track {
-    height: 14px;
-    border-radius: 10px;
-    background: linear-gradient(to right, #7986cb, #ba68c8, #e58aae, #f0a05a, #ffd54f, #aed581, #66bb6a);
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15);
-}
-
-.styled-range::-moz-range-track {
-    height: 14px;
-    border-radius: 10px;
-    background: linear-gradient(to right, #7986cb, #ba68c8, #e58aae, #f0a05a, #ffd54f, #aed581, #66bb6a);
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15);
-}
-
-/* Thumb trình duyệt Webkit (Chrome, Safari, iOS) */
-.styled-range::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 36px;
-    height: 36px;
-    margin-top: -11px;
+    outline-offset: 6px;
     border-radius: 50%;
-    background: #ffffff;
-    border: 4px solid var(--rose-600);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-    cursor: pointer;
-    transition: transform 0.15s ease, border-color 0.15s ease;
 }
 
-.styled-range::-webkit-slider-thumb:hover,
-.styled-range::-webkit-slider-thumb:active {
-    transform: scale(1.12);
-    border-color: var(--rose-700);
-}
-
-/* Thumb trình duyệt Firefox */
-.styled-range::-moz-range-thumb {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    background: #ffffff;
-    border: 4px solid var(--rose-600);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-    cursor: pointer;
-}
-
-.slider-labels {
+.level-legend {
     display: flex;
     justify-content: space-between;
-    margin-top: 10px;
+    max-width: 300px;
+    margin: 8px auto 0 auto;
     font-size: 13px;
     font-weight: 700;
     color: var(--ink-soft);
 }
 
+.level-error {
+    text-align: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--rose-800);
+    margin-top: 6px;
+}
+
+.level-error:empty {
+    margin-top: 0;
+}
+
+@media (max-width: 360px) {
+    .level-dots {
+        --dot: 44px;
+        gap: 10px 8px;
+        padding: 6px 0;
+    }
+}
+
+@media (min-width: 600px) {
+    /* 10 × 44 + 9 × 6 = 494 px ≤ phần ruột nhóm ở bề ngang hẹp nhất 600 px (520 − đệm 4 − viền 4 = 512 px) */
+    .level-dots {
+        --dot: 44px;
+        grid-template-columns: repeat(10, var(--dot));
+        gap: 6px;
+        padding: 8px 2px;
+    }
+    .level-legend {
+        max-width: 512px;
+    }
+}
+
 /* =========================================================
-   PHẦN 2: LƯỚI 6 THẺ CAPYBARA GỌI TÊN CẢM XÚC
+   PHẦN 2: LƯỚI 9 THẺ CAPYBARA (chỉ hình, 3×3 cả trên điện thoại)
    ========================================================= */
 .emotion-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 14px;
     margin-top: 10px;
 }
 
 @media (max-width: 440px) {
     .emotion-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 12px;
+        gap: 10px;
     }
 }
 
@@ -500,7 +535,7 @@ button {
     background: #fffafa;
     border: 2.5px solid #fce8f0;
     border-radius: var(--radius-subcard);
-    padding: 12px 8px;
+    padding: 8px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -538,18 +573,18 @@ button {
 .capy-img-box {
     display: block;
     position: relative;
-    width: 82px;
-    height: 82px;
+    width: 100%;
+    max-width: 96px;
+    aspect-ratio: 1 / 1;
     border-radius: 14px;
     overflow: hidden;
-    margin-bottom: 8px;
     background: #fdf5f8;
 }
 
 .capy-img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;  /* ảnh vuông nền trong suốt: hiện trọn bé capybara */
     display: block;
     transition: transform 0.25s ease;
 }
@@ -574,12 +609,14 @@ button {
     transform: scale(1.06);
 }
 
-.capy-name {
-    display: block;
+/* Dòng chữ nhỏ dưới lưới: "Chị chọn: Mệt mỏi" */
+.emotion-picked {
+    text-align: center;
     font-size: 15px;
     font-weight: 700;
     color: var(--rose-900);
-    text-align: center;
+    margin-top: 12px;
+    min-height: 1.4em;
 }
 
 /* Huy hiệu dấu tick nhỏ trên thẻ được chọn */
@@ -652,14 +689,16 @@ button {
     cursor: pointer;
     transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
     opacity: 0.45;
-    pointer-events: none;
     transform: scale(0.96);
+    /* Chưa đủ vẫn chạm được (aria-disabled): bấm vào thì app nhắc chỗ còn thiếu */
+    cursor: default;
 }
 
 /* Khi đã đủ điều kiện: sáng lên và sẵn sàng bấm */
 .btn-submit.ready {
     opacity: 1;
     pointer-events: auto;
+    cursor: pointer;
     transform: scale(1);
     animation: gentlePulse 2.2s infinite ease-in-out;
 }
@@ -669,7 +708,7 @@ button {
     50%      { box-shadow: 0 10px 30px rgba(194, 94, 132, 0.55); }
 }
 
-.btn-submit:hover {
+.btn-submit.ready:hover {
     transform: translateY(-2px) scale(1.02);
     box-shadow: 0 10px 28px rgba(194, 94, 132, 0.48);
 }
@@ -906,6 +945,8 @@ button {
     }
     .capy-card:hover,
     .capy-card.selected,
+    .level-dot:hover,
+    .level-dot.selected,
     .btn-submit:hover,
     .btn-restart:hover,
     .music-btn:hover {

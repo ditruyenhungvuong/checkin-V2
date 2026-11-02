@@ -4,7 +4,8 @@
      trả {"result":"success","action":"inserted"|"updated"} kèm CORS *
      (Apps Script thật cũng trả Access-Control-Allow-Origin: *).
    - state.mode: 'ok' | '500json' (500 + JSON lỗi) | '500text' (500 + HTML) | 'hang' (không trả lời)
-                 | 'reject' (200 + {"result":"error","error":"patient_id_invalid"} như Apps Script mới từ chối dữ liệu).
+                 | 'reject' (200 + {"result":"error","error":"patient_id_invalid"} như Apps Script mới từ chối dữ liệu)
+                 | 'emotion_invalid' (200 + {"result":"error","error":"emotion_invalid"} như Apps Script còn bản cũ).
    - Không ghi file nào ra đĩa.
    ========================================================= */
 'use strict';
@@ -30,6 +31,11 @@ function startMock(port) {
       if (state.mode === '500text') {
         res.writeHead(500, { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'text/html' });
         return res.end('<html><body>Internal Server Error</body></html>');
+      }
+      if (state.mode === 'emotion_invalid' && req.method === 'POST') {
+        /* Apps Script còn bản cũ (6 cảm xúc) từ chối 3 cảm xúc mới */
+        res.writeHead(200, cors);
+        return res.end(JSON.stringify({ result: 'error', error: 'emotion_invalid' }));
       }
       if (state.mode === 'reject' && req.method === 'POST') {
         res.writeHead(200, cors);

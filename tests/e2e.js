@@ -3,7 +3,12 @@
    Dùng lại thư viện CDP của app checkin-vao-ca (tests/lib/cdp.js), server tĩnh và mock Sheet riêng ở tests/lib.
 
    Chạy:  node tests/e2e.js [--out=<thư mục kết quả>] [--only=main,patientid,...]
-   Kịch bản: main | keyboard | patientid | xss | offline | down | hang | double | imgfail | layout | reduced | music | noadmin | sharedkeys
+   Kịch bản: main | keyboard | level | shuffle | oldserver | patientid | xss | offline | down | hang | double | imgfail | layout | reduced | music | noadmin | sharedkeys
+
+   02/11/2026: 10 chấm bấm thay thanh trượt (KHÔNG mức mặc định, radiogroup, phím mũi tên), 9 thẻ chỉ hình
+   (bộ 9 ảnh PNG mới, tên theo ảnh: Đau khổ, Bình an, Cô đơn…), nút Hoàn thành chưa đủ thì aria-disabled nhưng chạm vào được để nhắc chỗ thiếu.
+   Đợt sửa 2 (02/11/2026): 9 thẻ xáo thứ tự mỗi lượt mới. Thứ tự thẻ KHÔNG cố định nên test chọn thẻ theo tên;
+   kịch bản shuffle mở trang kèm ?qaseed=N để crypto.getRandomValues ra dãy cố định (không chập chờn).
 
    Bản 28/10/2026: app đã sửa theo docs/qa/checkin-me-bau-tong-hop.md (bỏ admin, escape, bàn phím, Mã số bệnh nhân (01/11/2026, thay SĐT),
    hàng chờ gửi lại, nhạc mặc định tắt…). Test kiểm hành vi MỚI; những gì cố ý giữ chờ anh Thông quyết
@@ -37,7 +42,10 @@ const APP_URL = 'http://127.0.0.1:' + STATIC_PORT + '/index.html';
 
 /* Chuỗi nguyên văn trong app (index.html / script.js) */
 const TXT = {
-  hintBoth: '💡 Chị nhập mã số bệnh nhân và chạm chọn 1 bé Capybara là xong nhé.',
+  hintAll: '💡 Chị nhập mã số bệnh nhân, chạm chọn một mức và 1 bé Capybara là xong nhé.',
+  hintLevel: '💡 Chị chạm chọn một mức cảm xúc ở Phần 1 nhé.',
+  levelError: 'Chị chạm chọn một mức từ 1 đến 10 nhé.',
+  picked: 'Chị chọn: ',
   hintId: '💡 Chị nhập mã số bệnh nhân ở trên giúp mình nhé.',
   hintIdBad: '💡 Mã số bệnh nhân chưa đúng, chị xem lại giúp mình nhé.',
   hintCard: '💡 Chị chạm chọn 1 bé Capybara ở Phần 2 nhé.',
@@ -57,9 +65,10 @@ const TXT = {
 const LEVELS = [null, 'Tuyệt vọng', 'Rất tồi tệ', 'Tồi tệ', 'Kém', 'Bình thường (Ổn)', 'Tương đối tốt', 'Tốt', 'Rất tốt', 'Tuyệt vời', 'Rất tuyệt vời'];
 const LEVEL_COLORS = [null, '#1a237e', '#4a148c', '#7d3a55', '#9c456b', '#a14d00', '#8a5a00', '#7a6400', '#5b6b00', '#2e7d32', '#1b5e20'];
 const LEVEL_EMOJI = [null, '😞', '😔', '😟', '🙁', '😐', '🙂', '😊', '😄', '😁', '🥰'];
-const CARDS = ['Vui vẻ', 'Buồn', 'Lo lắng', 'Tức giận', 'Hoảng hốt', 'Khó chịu'];
-const CARD_IMG = { 'Vui vẻ': 'vui.jpg', 'Buồn': 'buon.jpg', 'Lo lắng': 'khoc.jpg', 'Tức giận': 'tuc.jpg', 'Hoảng hốt': 'hoang_hot.jpg', 'Khó chịu': 'kho_chiu.jpg' };
-const CARD_EMOJI = { 'Vui vẻ': '😊', 'Buồn': '😢', 'Lo lắng': '😟', 'Tức giận': '😠', 'Hoảng hốt': '😨', 'Khó chịu': '😣' };
+const CARDS = ['Vui vẻ', 'Đau khổ', 'Lo lắng', 'Tức giận', 'Hoảng hốt', 'Khó chịu', 'Mệt mỏi', 'Bình an', 'Cô đơn'];
+/* 02/11/2026: bộ 9 ảnh mới của anh (PNG 480×480 nền trong suốt) */
+const CARD_IMG = { 'Vui vẻ': 'vui_ve.png', 'Đau khổ': 'dau_kho.png', 'Lo lắng': 'lo_lang.png', 'Tức giận': 'tuc_gian.png', 'Hoảng hốt': 'hoang_hot.png', 'Khó chịu': 'kho_chiu.png', 'Mệt mỏi': 'met_moi.png', 'Bình an': 'binh_an.png', 'Cô đơn': 'co_don.png' };
+const CARD_EMOJI = { 'Vui vẻ': '😊', 'Đau khổ': '😢', 'Lo lắng': '😟', 'Tức giận': '😠', 'Hoảng hốt': '😨', 'Khó chịu': '😣', 'Mệt mỏi': '😩', 'Bình an': '😌', 'Cô đơn': '🥺' };
 const SID_RE = /^[0-9A-Za-z-]{8,40}$/;
 const hex2rgb = h => 'rgb(' + [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)).join(', ') + ')';
 
@@ -97,6 +106,14 @@ const HOOK = `(() => {
     __qa.fetches.push({ t: performance.now(), url: u, method: init && init.method || 'GET', headers: init && init.headers || {}, body: init && init.body });
     return of(url, init);
   };
+  /* ?qaseed=N: thay crypto.getRandomValues bằng dãy giả ngẫu nhiên cố định (mulberry32) để thứ tự thẻ tái lập được */
+  const seedM = /[?&]qaseed=(\\d+)/.exec(location.search);
+  __qa.rng = 0;
+  if (seedM && window.crypto) {
+    let st = Number(seedM[1]) >>> 0;
+    const next = () => { st = (st + 0x6D2B79F5) >>> 0; let t = st; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return (t ^ (t >>> 14)) >>> 0; };
+    Object.defineProperty(window.crypto, 'getRandomValues', { configurable: true, writable: true, value: arr => { __qa.rng++; for (let i = 0; i < arr.length; i++) arr[i] = next(); return arr; } });
+  }
   try { Object.defineProperty(navigator, 'vibrate', { value: ms => { __qa.vibrate.push(ms); return true; }, configurable: true }); } catch (e) {}
   document.addEventListener('DOMContentLoaded', () => {
     const capy = document.getElementById('current-capy');
@@ -138,7 +155,7 @@ async function openApp(opts) {
   await page.send('Emulation.setDeviceMetricsOverride', { width: o.width || 375, height: o.height || 667, deviceScaleFactor: 2, mobile: true });
   if (o.reducedMotion) await page.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   await page.send('Page.addScriptToEvaluateOnNewDocument', { source: HOOK });
-  await page.navigate(APP_URL);
+  await page.navigate(APP_URL + (o.query || ''));
   if (!o.keepStorage) await page.evaluate("localStorage.clear(); true");
   return { page, kill, chromePid: child.pid, browserLog, consoleApi, requests };
 }
@@ -147,9 +164,18 @@ async function openApp(opts) {
 const text = (page, sel) => page.evaluate(`((document.querySelector(${JSON.stringify(sel)}) || { textContent: '' }).textContent || '').trim()`);
 const qa = page => page.evaluate('JSON.parse(JSON.stringify(window.__qa))');
 const hint = page => text(page, '#submit-hint');
-const btn = page => page.evaluate("(() => { const b = document.getElementById('btn-submit'); const cs = getComputedStyle(b); return { disabled: b.disabled, ready: b.classList.contains('ready'), text: b.innerText.trim(), opacity: cs.opacity, transform: cs.transform, anim: cs.animationName, pe: cs.pointerEvents }; })()");
-const cards = page => page.evaluate("[...document.querySelectorAll('.capy-card')].map(c => ({ tag: c.tagName, type: c.getAttribute('type'), name: c.querySelector('.capy-name').textContent, data: c.dataset.emotion, selected: c.classList.contains('selected'), pressed: c.getAttribute('aria-pressed'), badge: getComputedStyle(c.querySelector('.check-mark-badge')).display, src: (c.querySelector('img').getAttribute('src') || ''), alt: c.querySelector('img').alt, natural: c.querySelector('img').naturalWidth, fallback: c.querySelector('.capy-img-box').classList.contains('fallback'), after: getComputedStyle(c.querySelector('.capy-img-box'), '::after').content }))");
-const level = page => page.evaluate("(() => { const r = document.getElementById('emotion-range'); const img = document.getElementById('current-capy'); const st = document.getElementById('current-status'); const em = document.getElementById('current-capy-emoji'); return { value: r.value, min: r.min, max: r.max, valuetext: r.getAttribute('aria-valuetext'), status: st.textContent, color: getComputedStyle(st).color, inlineColor: st.style.color, src: (img.getAttribute('src') || '').split('/').pop(), alt: img.alt, natural: img.naturalWidth, imgHidden: img.hidden, emojiHidden: em.hidden, emoji: em.textContent, w: img.getBoundingClientRect().width, h: img.getBoundingClientRect().height, ew: em.offsetWidth, eh: em.offsetHeight }; })()");
+/* disabled = chưa đủ điều kiện (aria-disabled) HOẶC đang gửi (disabled thật) */
+const btn = page => page.evaluate("(() => { const b = document.getElementById('btn-submit'); const cs = getComputedStyle(b); return { disabled: b.disabled || b.getAttribute('aria-disabled') === 'true', ariaDisabled: b.getAttribute('aria-disabled'), realDisabled: b.disabled, ready: b.classList.contains('ready'), text: b.innerText.trim(), opacity: cs.opacity, transform: cs.transform, anim: cs.animationName, pe: cs.pointerEvents }; })()");
+const cards = page => page.evaluate("[...document.querySelectorAll('.capy-card')].map(c => { const img = c.querySelector('img'); return { tag: c.tagName, type: c.getAttribute('type'), name: c.getAttribute('aria-label'), text: c.innerText.replace(/[\\s✓]/g, ''), data: c.dataset.emotion, selected: c.classList.contains('selected'), pressed: c.getAttribute('aria-pressed'), badge: getComputedStyle(c.querySelector('.check-mark-badge')).display, src: img ? (img.getAttribute('src') || '') : '', alt: img ? img.alt : '', natural: img ? img.naturalWidth : 0, fallback: c.querySelector('.capy-img-box').classList.contains('fallback'), after: getComputedStyle(c.querySelector('.capy-img-box'), '::after').content, w: c.getBoundingClientRect().width, h: c.getBoundingClientRect().height }; })");
+/* Trạng thái 10 chấm + ảnh + nhãn: value = mức đang aria-checked ('' khi chưa chọn) */
+const level = page => page.evaluate("(() => { const dots = [...document.querySelectorAll('.level-dot')]; const on = dots.filter(d => d.getAttribute('aria-checked') === 'true'); const img = document.getElementById('current-capy'); const st = document.getElementById('current-status'); const em = document.getElementById('current-capy-emoji'); return { count: dots.length, value: on.length === 1 ? on[0].dataset.level : (on.length ? 'nhiều' : ''), selectedCls: dots.filter(d => d.classList.contains('selected')).map(d => d.dataset.level).join(), tabbable: dots.filter(d => d.tabIndex === 0).map(d => d.dataset.level).join(), status: st.textContent, color: getComputedStyle(st).color, inlineColor: st.style.color, src: (img.getAttribute('src') || '').split('/').pop(), alt: img.alt, natural: img.naturalWidth, imgHidden: img.hidden, emojiHidden: em.hidden, emoji: em.textContent, w: img.getBoundingClientRect().width, h: img.getBoundingClientRect().height, ew: em.offsetWidth, eh: em.offsetHeight, error: document.getElementById('level-error').textContent, need: document.getElementById('level-dots').classList.contains('need') }; })()");
+const activeDot = page => page.evaluate("(document.activeElement && document.activeElement.classList.contains('level-dot')) ? document.activeElement.dataset.level : ''");
+/* Phím mũi tên lên/xuống (cdp.js dùng chung không có) – bấm phím thật qua CDP */
+async function keyRaw(page, key, vk) {
+  const base = { key, code: key, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk };
+  await page.send('Input.dispatchKeyEvent', Object.assign({ type: 'rawKeyDown' }, base));
+  await page.send('Input.dispatchKeyEvent', Object.assign({ type: 'keyUp' }, base));
+}
 const successVisible = page => page.evaluate("getComputedStyle(document.getElementById('page-success')).display !== 'none'");
 const checkinVisible = page => page.evaluate("getComputedStyle(document.getElementById('page-checkin')).display !== 'none'");
 /* Hàng chờ gửi lại (chỉ giữ lượt CHƯA gửi được) */
@@ -172,8 +198,16 @@ async function typeId(page, value) {
   if (value === '') { await page.key('Backspace'); return; }
   await page.send('Input.insertText', { text: value });
 }
-/* Kéo thanh trượt bằng cách đặt value và phát sự kiện input (như kéo tay) */
-const setSlider = (page, v) => page.evaluate(`(() => { const r = document.getElementById('emotion-range'); r.value = ${v}; r.dispatchEvent(new Event('input', { bubbles: true })); return r.value; })()`);
+/* Chạm chấm mức bằng chuột thật (CDP), thử lại nếu trang đang trôi */
+async function pickLevel(page, v) {
+  const sel = '.level-dot[data-level="' + v + '"]';
+  for (let i = 0; i < 3; i++) {
+    await settleScroll(page);
+    await page.click(sel);
+    if (await waitFor(page, `document.querySelector(${JSON.stringify(sel)}).getAttribute('aria-checked') === 'true'`, 400)) return true;
+  }
+  return false;
+}
 async function pickCard(page, name) {
   const sel = '.capy-card[data-emotion="' + name + '"]';
   for (let i = 0; i < 3; i++) {
@@ -196,7 +230,7 @@ async function settleScroll(page) {
     prev = cur;
   }
 }
-const READY_EXPR = "(() => { const b = document.getElementById('btn-submit'); return b.classList.contains('ready') && !b.disabled; })()";
+const READY_EXPR = "(() => { const b = document.getElementById('btn-submit'); return b.classList.contains('ready') && !b.disabled && b.getAttribute('aria-disabled') === 'false'; })()";
 const waitReady = page => waitFor(page, READY_EXPR, 3000);
 
 /* AN TOÀN: đọc lại URL trong trang ngay trước khi bấm. Có script.google.com → throw, không bấm. */
@@ -265,20 +299,22 @@ async function scenarioMain() {
     if (requests.some(r => /kaspersky-labs\.com/.test(r.url))) note('Máy test có Kaspersky chèn script vào trang (gc.kis.v2.scr.kaspersky-labs.com) – bỏ qua, không phải của app.');
     T('AN TOÀN: 0 request tới script.google.com', !requests.some(r => r.url.includes('script.google.com')));
     T('Tải: nhạc preload="none" → 0 request tới background-music.mp3 lúc mở trang', requests.filter(r => /background-music\.mp3/.test(r.url)).length === 0, requests.filter(r => /mp3/.test(r.url)).map(r => r.url).join(' '));
-    T('Tải: hint ban đầu "thiếu cả hai", nút disabled, chưa .ready', (await hint(page)) === TXT.hintBoth && (await btn(page)).disabled && !(await btn(page)).ready, await hint(page));
+    T('Tải: hint ban đầu "chưa có gì", nút aria-disabled (chưa .ready), không disabled thật', (await hint(page)) === TXT.hintAll && (await btn(page)).ariaDisabled === 'true' && !(await btn(page)).realDisabled && !(await btn(page)).ready, await hint(page));
     await sleep(350);
     let b = await btn(page);
-    T('Tải: nút chưa thức dậy – mờ 0.45, co 0.96, pointer-events none', b.opacity === '0.45' && b.transform === 'matrix(0.96, 0, 0, 0.96, 0, 0)' && b.pe === 'none', JSON.stringify(b));
+    T('Tải: nút chưa thức dậy – mờ 0.45, co 0.96, không đập nhịp (vẫn chạm được để được nhắc)', b.opacity === '0.45' && b.transform === 'matrix(0.96, 0, 0, 0.96, 0, 0)' && b.anim === 'none' && b.pe === 'auto', JSON.stringify(b));
     T('Tải: chữ nút "Hoàn thành Check-in →"', b.text === TXT.btnIdle, b.text);
     let lv = await level(page);
-    T('Tải: thanh trượt 5 (min 1, max 10), "5 - Bình thường (Ổn)", ảnh capy-level-05.png', lv.value === '5' && lv.min === '1' && lv.max === '10' && lv.status === '5 - ' + LEVELS[5] && lv.src === 'capy-level-05.png', JSON.stringify(lv));
-    T('Tải: màu chữ trạng thái mức 5 = #a14d00 (đủ tương phản)', lv.color === hex2rgb(LEVEL_COLORS[5]), lv.color);
-    T('Tải: alt ảnh mức và aria-valuetext theo mức 5', lv.alt === 'Bé Capybara mức 5: Bình thường (Ổn)' && lv.valuetext === '5 - Bình thường (Ổn)', JSON.stringify({ alt: lv.alt, vt: lv.valuetext }));
+    T('Tải: 10 chấm, KHÔNG chấm nào được chọn (không mặc định 5), chữ mức trống', lv.count === 10 && lv.value === '' && lv.selectedCls === '' && lv.status === '', JSON.stringify(lv));
+    T('Tải: chưa có ảnh mức (img ẩn, không src), khung hiện hoa 🌸', lv.imgHidden && lv.src === '' && !lv.emojiHidden && lv.emoji === '🌸', JSON.stringify({ src: lv.src, hidden: lv.imgHidden, emoji: lv.emoji }));
+    T('Tải: roving tabindex – chỉ chấm 1 nhận Tab', lv.tabbable === '1', lv.tabbable);
+    T('Tải: nhóm chấm role=radiogroup, 10 role=radio, nhãn "Mức 7, Tốt"…', (await page.evaluate("(() => { const g = document.getElementById('level-dots'); const d = [...g.querySelectorAll('[role=radio]')]; return g.getAttribute('role') === 'radiogroup' && g.getAttribute('aria-labelledby') === 'part1-title' && d.length === 10 && d.every((x, i) => x.getAttribute('aria-label') === 'Mức ' + (i + 1) + ', ' + " + JSON.stringify(LEVELS.slice(1)) + "[i] && x.getAttribute('aria-checked') === 'false'); })()")));
     const c0 = await cards(page);
-    T('Tải: 6 thẻ là <button type=button>, chưa chọn, aria-pressed=false, tên = data-emotion', c0.length === 6 && c0.every(c => c.tag === 'BUTTON' && c.type === 'button' && !c.selected && c.pressed === 'false' && c.badge === 'none' && c.name === c.data), JSON.stringify(c0.map(c => c.tag + ':' + c.pressed)));
+    T('Tải: 9 thẻ là <button type=button>, chưa chọn, aria-pressed=false, aria-label = data-emotion, KHÔNG có chữ trên thẻ', c0.length === 9 && c0.every(c => c.tag === 'BUTTON' && c.type === 'button' && !c.selected && c.pressed === 'false' && c.badge === 'none' && c.name === c.data && c.text === '') && JSON.stringify(c0.map(c => c.data).sort()) === JSON.stringify(CARDS.slice().sort()), JSON.stringify(c0.map(c => c.name + ':' + c.text)));
+    T('Tải: dòng "Chị chọn: …" dưới lưới còn trống', (await text(page, '#emotion-picked')) === '');
     T('Tải: focus không tự nhảy vào ô mã số', await page.evaluate('document.activeElement === document.body'));
     T('Tải: nút nhạc 🔇 (mặc định TẮT), aria-pressed=false, nhãn cố định "Nhạc nền", audio không phát', (await text(page, '#music-toggle-btn')) === '🔇' && (await page.evaluate("document.getElementById('music-toggle-btn').getAttribute('aria-pressed') === 'false' && document.getElementById('music-toggle-btn').getAttribute('aria-label') === 'Nhạc nền' && document.getElementById('bg-music').paused")));
-    T('Tải: chữ mức không aria-live (thanh trượt đã có aria-valuetext, không đọc hai lần)', !(await page.evaluate("document.getElementById('current-status').hasAttribute('aria-live')")));
+    T('Tải: chữ mức không aria-live (chấm đã có nhãn, không đọc hai lần)', !(await page.evaluate("document.getElementById('current-status').hasAttribute('aria-live')")));
     T('Tải: nhãn ô "Mã số bệnh nhân của chị" (icon 🆔), đã bỏ câu giải thích dưới ô', /Mã số bệnh nhân của chị/.test(await text(page, 'label[for="input-patient-id"]')) && (await page.evaluate("!document.getElementById('phone-note') && !document.getElementById('input-phone') && !/điện thoại|giữ tạm/.test(document.querySelector('.patient-id-section').innerText)")), await text(page, '.patient-id-section'));
     T('Tải: ô mã số type=text, inputmode=numeric, autocomplete=off, placeholder "Ví dụ: 26012345", maxlength 30', (await page.evaluate("(() => { const i = document.getElementById('input-patient-id'); return [i.type, i.inputMode, i.autocomplete, i.placeholder, i.maxLength, i.getAttribute('aria-describedby')].join('|'); })()")) === 'text|numeric|off|Ví dụ: 26012345|30|patient-id-error');
     T('Tải: dòng "Tự đánh giá, không phải thang chẩn đoán." hiện', (await page.evaluate("[...document.querySelectorAll('.footer-note')].some(n => n.offsetParent !== null && n.textContent.includes('không phải thang chẩn đoán'))")));
@@ -289,49 +325,69 @@ async function scenarioMain() {
 
     /* --- Nhập mã số → hint "thiếu thẻ" --- */
     await typeId(page, '26012345');
-    T('Hint: có mã số, chưa thẻ → "thiếu thẻ"', (await hint(page)) === TXT.hintCard && (await btn(page)).disabled, await hint(page));
+    T('Hint: có mã số, chưa mức, chưa thẻ → "thiếu mức"', (await hint(page)) === TXT.hintLevel && (await btn(page)).disabled, await hint(page));
 
-    /* --- Thanh trượt 1–10 --- */
+    /* --- 10 chấm: chạm bằng chuột lần lượt 1 → 10 --- */
     const sweep = [];
     for (let v = 1; v <= 10; v++) {
-      await setSlider(page, v);
+      const ok0 = await pickLevel(page, v);
+      await sleep(30);
       lv = await level(page);
       /* màu đọc từ style inline (computed đang transition 0.2s) */
-      const ok = lv.value === String(v) && lv.status === v + ' - ' + LEVELS[v] && lv.src === 'capy-level-' + String(v).padStart(2, '0') + '.png' && lv.inlineColor === hex2rgb(LEVEL_COLORS[v]) && lv.alt === 'Bé Capybara mức ' + v + ': ' + LEVELS[v] && lv.valuetext === v + ' - ' + LEVELS[v] && lv.emoji === LEVEL_EMOJI[v];
-      sweep.push(ok ? v : v + '✗(' + lv.status + '/' + lv.src + '/' + lv.inlineColor + '/' + lv.alt + ')');
+      const ok = ok0 && lv.value === String(v) && lv.selectedCls === String(v) && lv.tabbable === String(v) && lv.status === v + ' - ' + LEVELS[v] && lv.src === 'capy-level-' + String(v).padStart(2, '0') + '.png' && lv.inlineColor === hex2rgb(LEVEL_COLORS[v]) && lv.alt === 'Bé Capybara mức ' + v + ': ' + LEVELS[v] && lv.emoji === LEVEL_EMOJI[v];
+      sweep.push(ok ? v : v + '✗(' + JSON.stringify(lv) + ')');
     }
-    T('Thanh trượt: 10 mức đổi đúng chữ, ảnh, màu, alt, aria-valuetext, emoji dự phòng', sweep.every(x => typeof x === 'number'), sweep.join(' '));
+    T('Chuột: chạm 10 chấm, mỗi lúc đúng 1 chấm aria-checked + .selected, chữ "7 - Tốt", ảnh, màu, alt, emoji dự phòng đúng mức', sweep.every(x => typeof x === 'number'), sweep.join(' '));
     let s = await qa(page);
-    T('Thanh trượt: src ảnh đổi đúng thứ tự 01→10', s.capySrc.join(',') === [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => 'capy-level-' + String(v).padStart(2, '0') + '.png').join(','), s.capySrc.join(','));
-    T('Thanh trượt: rung 5 ms mỗi lần đổi (navigator.vibrate)', s.vibrate.filter(v => v === 5).length >= 10, JSON.stringify(s.vibrate.slice(0, 12)));
-    await page.evaluate("document.getElementById('emotion-range').focus(); true");
+    T('Chuột: src ảnh đổi đúng thứ tự 01→10', s.capySrc.filter(Boolean).join(',') === [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(v => 'capy-level-' + String(v).padStart(2, '0') + '.png').join(','), s.capySrc.join(','));
+    T('Chuột: rung 15 ms mỗi lần chọn mức (navigator.vibrate)', s.vibrate.filter(v => v === 15).length >= 10, JSON.stringify(s.vibrate.slice(0, 12)));
+    await sleep(300); // chờ hiệu ứng phóng (transition 0.18s) chạy xong
+    const dotLook = await page.evaluate("(() => { const d = document.querySelector('.level-dot.selected'); const o = document.querySelector('.level-dot:not(.selected)'); return { sel: getComputedStyle(d).transform, selShadow: getComputedStyle(d).boxShadow, other: getComputedStyle(o).transform, color: getComputedStyle(d).color, bg: getComputedStyle(d).backgroundColor }; })()");
+    T('Chấm đang chọn nổi rõ: phóng 1.14 + viền (box-shadow 2 vòng), chấm khác không phóng', /matrix\(1\.14, 0, 0, 1\.14/.test(dotLook.sel) && (dotLook.selShadow.match(/rgb/g) || []).length >= 2 && (dotLook.other === 'none' || dotLook.other === 'matrix(1, 0, 0, 1, 0, 0)'), JSON.stringify(dotLook));
+    T('Chấm: nền đúng màu mức 10, chữ trắng', dotLook.bg === hex2rgb(LEVEL_COLORS[10]) && dotLook.color === 'rgb(255, 255, 255)', JSON.stringify(dotLook));
+    /* --- Phím: Home / End / mũi tên (vòng lại ở hai đầu), focus đi theo chấm --- */
+    await page.evaluate("document.querySelector('.level-dot[tabindex=\"0\"]').focus(); true");
     await page.key('Home');
     lv = await level(page);
-    T('Thanh trượt: phím Home → 1 - Tuyệt vọng, capy-level-01', lv.value === '1' && lv.status === '1 - Tuyệt vọng' && lv.src === 'capy-level-01.png', JSON.stringify(lv));
+    T('Phím Home → 1 - Tuyệt vọng, capy-level-01, focus ở chấm 1', lv.value === '1' && lv.status === '1 - Tuyệt vọng' && lv.src === 'capy-level-01.png' && (await activeDot(page)) === '1', JSON.stringify(lv));
     await page.key('ArrowLeft');
-    T('Thanh trượt: ArrowLeft ở 1 vẫn 1', (await level(page)).value === '1');
+    T('ArrowLeft ở 1 → vòng sang 10 (đúng mẫu radiogroup)', (await level(page)).value === '10' && (await activeDot(page)) === '10');
+    await page.key('ArrowRight');
+    T('ArrowRight ở 10 → vòng về 1', (await level(page)).value === '1' && (await activeDot(page)) === '1');
+    await keyRaw(page, 'ArrowDown', 40);
+    T('ArrowDown → 2', (await level(page)).value === '2' && (await activeDot(page)) === '2');
+    await page.key('ArrowRight');
+    T('ArrowRight → 3, chữ "3 - Tồi tệ"', (await level(page)).value === '3' && (await level(page)).status === '3 - Tồi tệ');
+    await keyRaw(page, 'ArrowUp', 38);
+    T('ArrowUp → 2', (await level(page)).value === '2' && (await activeDot(page)) === '2');
     await page.key('End');
     lv = await level(page);
-    T('Thanh trượt: phím End → 10 - Rất tuyệt vời', lv.value === '10' && lv.status === '10 - Rất tuyệt vời', lv.status);
-    T('Thanh trượt: nhãn hai đầu "1 (Tuyệt vọng)" / "10 (Rất tuyệt vời)" (giữ nguyên chờ anh)', (await page.evaluate("[...document.querySelectorAll('.slider-labels span')].map(s => s.textContent).join('|')")) === '1 (Tuyệt vọng)|10 (Rất tuyệt vời)');
-    const sliderBox = await page.evaluate("(() => { const b = document.getElementById('emotion-range').getBoundingClientRect(); return Math.round(b.height); })()");
-    T('Thanh trượt: vùng chạm cao ≥ 44 px', sliderBox >= 44, sliderBox + ' px');
-    await setSlider(page, 3);
-    T('Hint: đổi thanh trượt không làm nút bật khi chưa chọn thẻ', (await btn(page)).disabled && (await hint(page)) === TXT.hintCard);
+    T('Phím End → 10 - Rất tuyệt vời', lv.value === '10' && lv.status === '10 - Rất tuyệt vời', lv.status);
+    T('Phím mũi tên không cuộn trang (preventDefault)', (await page.evaluate('scrollX')) === 0);
+    T('Chú thích hai đầu "1 (Tuyệt vọng)" / "10 (Rất tuyệt vời)" (giữ nguyên chờ anh)', (await page.evaluate("[...document.querySelectorAll('.level-legend span')].map(s => s.textContent).join('|')")) === '1 (Tuyệt vọng)|10 (Rất tuyệt vời)');
+    const dotBoxes = await page.evaluate("[...document.querySelectorAll('.level-dot')].map(d => { const b = d.getBoundingClientRect(); return Math.round(d.offsetWidth) + 'x' + Math.round(d.offsetHeight); })");
+    T('Chấm: vùng chạm ≥ 44×44 px (cả 10 chấm)', dotBoxes.every(x => x.split('x').every(n => Number(n) >= 44)), dotBoxes.join(','));
+    await pickLevel(page, 3);
+    T('Hint: có mã số + mức, chưa thẻ → nút chưa bật, hint "thiếu thẻ"', (await btn(page)).disabled && (await hint(page)) === TXT.hintCard);
 
-    /* --- 6 thẻ, chỉ một được chọn --- */
+    /* --- 9 thẻ, chỉ một được chọn --- */
     const pickLog = [];
     for (const name of CARDS) {
       const ok = await pickCard(page, name);
       const cs = await cards(page);
       const only = cs.filter(c => c.selected).map(c => c.name);
       const pressed = cs.filter(c => c.pressed === 'true').map(c => c.name);
-      pickLog.push(name + ':' + (ok && only.length === 1 && only[0] === name && pressed.join() === name && cs.find(c => c.name === name).badge === 'flex' ? 'ok' : 'LỖI ' + only.join('/') + ' pressed=' + pressed.join('/')));
+      const cap = await text(page, '#emotion-picked');
+      pickLog.push(name + ':' + (ok && only.length === 1 && only[0] === name && pressed.join() === name && cs.find(c => c.name === name).badge === 'flex' && cap === TXT.picked + name ? 'ok' : 'LỖI ' + only.join('/') + ' pressed=' + pressed.join('/') + ' cap=' + cap));
     }
-    T('Thẻ: chọn lần lượt 6 thẻ, mỗi lúc đúng 1 thẻ .selected + aria-pressed=true + badge ✓', pickLog.every(x => x.endsWith(':ok')), pickLog.join(' '));
-    T('Thẻ: tên file ảnh giữ nguyên (Lo lắng → khoc.jpg, chờ anh xem ảnh)', (await cards(page)).map(c => c.name + '→' + c.src).join(',') === CARDS.map(n => n + '→' + CARD_IMG[n]).join(','), (await cards(page)).map(c => c.name + '→' + c.src).join(','));
+    T('Thẻ: chọn lần lượt 9 thẻ, mỗi lúc đúng 1 thẻ .selected + aria-pressed=true + badge ✓ + dòng "Chị chọn: …" đúng tên', pickLog.every(x => x.endsWith(':ok')), pickLog.join(' '));
+    const cAll = await cards(page);
+    T('Thẻ: cả 9 thẻ dùng ảnh mới đúng tên (vui_ve.png … co_don.png), ảnh tải được (naturalWidth 480), không còn emoji giữ chỗ', cAll.length === 9 && cAll.every(c => c.src === CARD_IMG[c.name] && c.natural === 480 && !c.fallback), cAll.map(c => c.name + '→' + c.src + ':' + c.natural + (c.fallback ? ' fallback' : '')).join(', '));
+    /* offsetWidth = cỡ bố cục (thẻ đang chọn phóng 1.02 nên không đo bằng getBoundingClientRect) */
+    const boxSz = await page.evaluate("[...document.querySelectorAll('.capy-img-box')].map(b => b.offsetWidth + 'x' + b.offsetHeight)");
+    T('Thẻ: 9 khung ảnh vuông, cùng cỡ', new Set(boxSz).size === 1 && boxSz.every(x => { const [w, h] = x.split('x').map(Number); return w === h && w >= 60; }), boxSz.join(','));
     s = await qa(page);
-    T('Thẻ: rung 25 ms khi chạm', s.vibrate.filter(v => v === 25).length >= 6);
+    T('Thẻ: rung 25 ms khi chạm', s.vibrate.filter(v => v === 25).length >= 9);
     await pickCard(page, 'Lo lắng');
     T('Hint: đủ mã số + thẻ → "✨ đủ", class .done nền xanh nhạt, nút .ready không disabled', (await hint(page)) === TXT.hintDone && (await waitReady(page)) && (await page.evaluate("document.getElementById('submit-hint').classList.contains('done') && getComputedStyle(document.getElementById('submit-hint')).backgroundColor")) === 'rgb(232, 245, 233)', await hint(page));
     await sleep(400);
@@ -349,7 +405,7 @@ async function scenarioMain() {
     await page.screenshot(path.join(OUT, 'shot-main-02-ready.png'), true);
 
     /* --- Bấm Hoàn thành ở mức 3 --- */
-    await setSlider(page, 3);
+    await pickLevel(page, 3);
     const sent = await submit(page);
     T('Gửi: sang trang cảm ơn sau khi bấm', sent);
     s = await qa(page);
@@ -385,14 +441,14 @@ async function scenarioMain() {
     await restart(page);
     lv = await level(page);
     b = await btn(page);
-    T('Reset: ô mã số trống, thanh trượt 5, "5 - Bình thường (Ổn)", ảnh 05', (await idVal(page)) === '' && lv.value === '5' && lv.status === '5 - ' + LEVELS[5] && lv.src === 'capy-level-05.png', JSON.stringify(lv));
-    T('Reset: không thẻ nào chọn (aria-pressed=false), nút disabled, chữ "Hoàn thành Check-in →", hint "thiếu cả hai"', (await cards(page)).every(c => !c.selected && c.pressed === 'false') && b.disabled && !b.ready && b.text === TXT.btnIdle && (await hint(page)) === TXT.hintBoth, JSON.stringify({ b, hint: await hint(page) }));
+    T('Reset: ô mã số trống, KHÔNG chấm nào chọn, chữ mức trống, ảnh mức bỏ (hoa 🌸), chấm 1 nhận Tab', (await idVal(page)) === '' && lv.value === '' && lv.selectedCls === '' && lv.status === '' && lv.imgHidden && lv.src === '' && lv.emoji === '🌸' && lv.tabbable === '1', JSON.stringify(lv));
+    T('Reset: không thẻ nào chọn (aria-pressed=false), dòng "Chị chọn" trống, nút chưa bật, chữ "Hoàn thành Check-in →", hint "chưa có gì"', (await cards(page)).every(c => !c.selected && c.pressed === 'false') && (await text(page, '#emotion-picked')) === '' && b.disabled && !b.realDisabled && !b.ready && b.text === TXT.btnIdle && (await hint(page)) === TXT.hintAll, JSON.stringify({ b, hint: await hint(page) }));
     T('Reset: trang cảm ơn ẩn, tóm tắt đã dọn, khung Hỗ trợ đóng', (await checkinVisible(page)) && !(await successVisible(page)) && (await page.evaluate("document.getElementById('success-summary').textContent === '' && !document.getElementById('support-box').open")));
 
     /* --- Lượt 2: mã số có dấu cách, số 0 ở đầu, mức 10 --- */
     await typeId(page, '0012 345');
     await pickCard(page, 'Vui vẻ');
-    await setSlider(page, 10);
+    await pickLevel(page, 10);
     const sent2 = await submit(page);
     await waitFor(page, "__qa.logs.filter(l => l.includes('Đã lưu')).length >= 2", 2000);
     const r2 = e.mock.state.rows[1] || {};
@@ -406,7 +462,7 @@ async function scenarioMain() {
     const other = nonAssetLog(browserLog).filter(l => /error/i.test(l) && !/kaspersky/.test(l));
     T('Console trình duyệt: không lỗi nào ngoài 404 ảnh/nhạc', other.length === 0, other.join(' | '));
     T('Có favicon (không 404 favicon.ico mỗi lần tải)', !browserLog.some(l => /favicon\.ico/.test(l)) && !requests.some(r => /favicon\.ico/.test(r.url)), browserLog.filter(l => /favicon/.test(l)).join(' | '));
-    note('Log trình duyệt: ' + browserLog.filter(l => /\.(jpg|png)\b/.test(l)).length + ' dòng 404 ảnh (thư mục chưa có ảnh, biết trước).');
+    T('Không có 404 ảnh nào (đủ 9 ảnh thẻ + 10 ảnh mức)', browserLog.filter(l => /\.(jpg|png)\b/.test(l)).length === 0, browserLog.filter(l => /\.(jpg|png)\b/.test(l)).join(' | '));
     T('AN TOÀN: suốt kịch bản 0 request tới script.google.com', !requests.some(r => r.url.includes('script.google.com')));
     saveConsole('main', consoleApi, browserLog, s);
   } finally { await teardown(e); }
@@ -418,36 +474,39 @@ async function scenarioKeyboard() {
   try {
     e = await setup({ height: 900 });
     const { page } = e;
-    const active = () => page.evaluate("(() => { const a = document.activeElement; if (!a || a === document.body) return 'body'; return a.id ? '#' + a.id : (a.dataset.emotion ? 'card:' + a.dataset.emotion : a.className || a.tagName); })()");
+    const active = () => page.evaluate("(() => { const a = document.activeElement; if (!a || a === document.body) return 'body'; return a.id ? '#' + a.id : (a.dataset.emotion ? 'card:' + a.dataset.emotion : (a.dataset.level ? 'dot:' + a.dataset.level : a.className || a.tagName)); })()");
     /* Thứ tự Tab từ đầu trang (chưa có gì được focus) */
     const order = [];
-    for (let i = 0; i < 10; i++) { await page.key('Tab'); order.push(await active()); }
-    const expect = ['#music-toggle-btn', '#input-patient-id', '#emotion-range'].concat(CARDS.map(n => 'card:' + n), ['support-summary']);
-    T('Tab: thứ tự nhạc → mã số → thanh trượt → 6 thẻ → Hỗ trợ (nút Hoàn thành tắt nên bỏ qua)', order.join(',') === expect.join(','), order.join(','));
+    for (let i = 0; i < 14; i++) { await page.key('Tab'); order.push(await active()); }
+    /* Thẻ đã xáo: thứ tự Tab phải theo đúng thứ tự thẻ trong trang (DOM = nhìn thấy) */
+    const domCards = await page.evaluate("[...document.querySelectorAll('.capy-card')].map(c => c.dataset.emotion)");
+    const expect = ['#music-toggle-btn', '#input-patient-id', 'dot:1'].concat(domCards.map(n => 'card:' + n), ['#btn-submit', 'support-summary']);
+    T('Tab: thứ tự nhạc → mã số → nhóm 10 chấm (1 điểm dừng, chấm 1) → 9 thẻ → nút Hoàn thành (aria-disabled, vẫn focus được) → Hỗ trợ', order.join(',') === expect.join(','), order.join(','));
     /* Làm một lượt (Chrome giữ điểm bắt đầu Tab sau blur, nên đặt focus vào nút nhạc rồi Tab tiếp) */
     await page.evaluate("document.getElementById('music-toggle-btn').focus(); true");
     await page.key('Tab');
     T('Từ nút nhạc, Tab → ô mã số', (await active()) === '#input-patient-id');
     await page.type('26012345');
     await page.key('Tab');
-    await page.key('ArrowRight');
-    T('Tab → thanh trượt, ArrowRight → mức 6', (await active()) === '#emotion-range' && (await level(page)).value === '6');
+    T('Tab → chấm 1 (chưa chọn gì)', (await active()) === 'dot:1' && (await level(page)).value === '');
+    for (let i = 0; i < 5; i++) await page.key('ArrowRight');
+    T('ArrowRight 5 lần → mức 6, focus ở chấm 6, chỉ chấm 6 nhận Tab', (await active()) === 'dot:6' && (await level(page)).value === '6' && (await level(page)).tabbable === '6');
     await page.key('Tab');
-    T('Tab → thẻ đầu "Vui vẻ" có viền focus-visible 3px', (await active()) === 'card:Vui vẻ' && (await page.evaluate("(() => { const a = document.activeElement; const cs = getComputedStyle(a); return a.matches(':focus-visible') && cs.outlineStyle === 'solid' && cs.outlineWidth === '3px'; })()")));
+    T('Tab → thẻ đầu (' + domCards[0] + ') có viền focus-visible 3px', (await active()) === 'card:' + domCards[0] && (await page.evaluate("(() => { const a = document.activeElement; const cs = getComputedStyle(a); return a.matches(':focus-visible') && cs.outlineStyle === 'solid' && cs.outlineWidth === '3px'; })()")));
     await page.key('Enter');
-    T('Enter trên thẻ "Vui vẻ" → chọn, aria-pressed=true', (await cards(page)).filter(c => c.selected && c.pressed === 'true').map(c => c.name).join() === 'Vui vẻ');
+    T('Enter trên thẻ đầu → chọn, aria-pressed=true', (await cards(page)).filter(c => c.selected && c.pressed === 'true').map(c => c.name).join() === domCards[0]);
     await page.key('Tab');
     await page.key('Space');
-    T('Tab → "Buồn", Space → chọn "Buồn", bỏ chọn "Vui vẻ"', (await active()) === 'card:Buồn' && (await cards(page)).filter(c => c.selected && c.pressed === 'true').map(c => c.name).join() === 'Buồn', JSON.stringify((await cards(page)).map(c => c.name + ':' + c.pressed)));
-    for (let i = 0; i < 4; i++) await page.key('Tab');
+    T('Tab → thẻ thứ hai, Space → chọn thẻ đó, bỏ chọn thẻ đầu', (await active()) === 'card:' + domCards[1] && (await cards(page)).filter(c => c.selected && c.pressed === 'true').map(c => c.name).join() === domCards[1], JSON.stringify((await cards(page)).map(c => c.name + ':' + c.pressed)));
+    for (let i = 0; i < 7; i++) await page.key('Tab');
     await page.key('Tab');
-    T('Tab tiếp → nút Hoàn thành (đã bật)', (await active()) === '#btn-submit', await active());
+    T('Tab tiếp qua 7 thẻ còn lại → nút Hoàn thành (đã bật)', (await active()) === '#btn-submit' && !(await btn(page)).disabled, await active());
     await assertSafeUrl(page);
     await page.key('Enter');
     const shown = await waitFor(page, "getComputedStyle(document.getElementById('page-success')).display !== 'none'", 2500);
     await waitFor(page, "__qa.logs.some(l => l.includes('Đã lưu'))", 2000);
     const row = e.mock.state.rows[0] || {};
-    T('Enter trên nút Hoàn thành → trang cảm ơn, POST level 6 "Buồn"', !!shown && e.mock.state.rows.length === 1 && row.level === 6 && row.part2 === 'Buồn', JSON.stringify(row));
+    T('Enter trên nút Hoàn thành → trang cảm ơn, POST level 6 + đúng nhãn thẻ thứ hai (' + domCards[1] + ')', !!shown && e.mock.state.rows.length === 1 && row.level === 6 && row.part2 === domCards[1], JSON.stringify(row));
     T('Sau khi gửi: focus ở tiêu đề trang cảm ơn', !!(await waitFor(page, "document.activeElement.id === 'success-title'", 1000)));
     await page.key('Tab');
     T('Tab từ tiêu đề → nút "Thực hiện check-in khác"', (await page.evaluate("document.activeElement.classList.contains('btn-restart')")));
@@ -459,6 +518,181 @@ async function scenarioKeyboard() {
   } finally { await teardown(e); }
 }
 
+/* ================= level: chưa chọn mức thì không gửi; chọn bằng phím/chuột; 3 cảm xúc mới (02/11/2026) ================= */
+async function scenarioLevel() {
+  let e;
+  try {
+    e = await setup({});
+    const { page } = e;
+    await typeId(page, '26012345');
+    T('Chọn thẻ mới "Cô đơn" bằng chuột → .selected, aria-pressed', await pickCard(page, 'Cô đơn'));
+    T('Dòng dưới lưới: "Chị chọn: Cô đơn"', (await text(page, '#emotion-picked')) === TXT.picked + 'Cô đơn', await text(page, '#emotion-picked'));
+    T('Có mã số + thẻ, chưa mức → hint "thiếu mức", nút chưa bật', (await hint(page)) === TXT.hintLevel && (await btn(page)).disabled && !(await btn(page)).ready, await hint(page));
+    /* Bấm Hoàn thành thật (chuột) khi chưa chọn mức */
+    await assertSafeUrl(page);
+    await page.evaluate('window.scrollTo(0, document.body.scrollHeight); true');
+    await settleScroll(page);
+    await page.click('#btn-submit');
+    await sleep(700);
+    let lv = await level(page);
+    T('Chưa chọn mức, bấm Hoàn thành → KHÔNG gửi (0 POST), vẫn ở trang check-in', e.mock.posts().length === 0 && (await checkinVisible(page)) && !(await successVisible(page)), e.mock.posts().length + ' POST');
+    T('… hiện câu nhắc cạnh 10 chấm "' + TXT.levelError + '", nhóm chấm viền hồng (.need)', lv.error === TXT.levelError && lv.need, JSON.stringify({ error: lv.error, need: lv.need }));
+    T('… focus đưa tới chấm 1 (chấm nhận Tab), câu nhắc có aria-live', (await activeDot(page)) === '1' && (await page.evaluate("document.getElementById('level-error').getAttribute('aria-live')")) === 'polite');
+    await settleScroll(page);
+    const vis = await page.evaluate("(() => { const b = document.getElementById('level-dots').getBoundingClientRect(); return b.top >= 0 && b.bottom <= innerHeight; })()");
+    T('… cuộn tới khu 10 chấm (nằm trong màn hình)', vis);
+    T('… không alert, không đổi chữ nút', (await qa(page)).alerts.length === 0 && (await btn(page)).text === TXT.btnIdle);
+    /* Chọn bằng phím: Space chọn chấm đang focus, mũi tên đổi mức */
+    await page.key('Space');
+    lv = await level(page);
+    T('Phím Space trên chấm 1 → chọn mức 1, câu nhắc tắt, bỏ viền .need', lv.value === '1' && lv.error === '' && !lv.need, JSON.stringify(lv));
+    for (let i = 0; i < 6; i++) await page.key('ArrowRight');
+    lv = await level(page);
+    T('ArrowRight 6 lần → mức 7 "7 - Tốt", focus ở chấm 7, ảnh capy-level-07', lv.value === '7' && lv.status === '7 - Tốt' && (await activeDot(page)) === '7' && lv.src === 'capy-level-07.png', JSON.stringify(lv));
+    T('Đủ mã số + mức + thẻ → hint "✨ đủ", nút bật', (await hint(page)) === TXT.hintDone && !!(await waitReady(page)));
+    T('Gửi (mức 7 chọn bằng phím) → trang cảm ơn', await submit(page));
+    await waitFor(page, "__qa.logs.some(l => l.includes('Đã lưu'))", 2000);
+    let row = e.mock.state.rows[0] || {};
+    T('Payload: level 7 (số nguyên), part1 "7 - Tốt", part2 "Cô đơn"', e.mock.state.rows.length === 1 && row.level === 7 && Number.isInteger(row.level) && row.part1 === '7 - Tốt' && row.part2 === 'Cô đơn', JSON.stringify(row));
+    const sum = await page.evaluate("document.getElementById('success-summary').innerText");
+    T('Cảm ơn: tóm tắt "Mức cảm xúc: 7 - Tốt", "Bé Capybara: Cô đơn"', /Mức cảm xúc: 7 - Tốt/.test(sum) && /Bé Capybara: Cô đơn/.test(sum), sum);
+    await restart(page);
+    lv = await level(page);
+    T('Làm lượt khác: không còn mức nào được chọn', lv.value === '' && lv.status === '' && (await text(page, '#emotion-picked')) === '');
+
+    /* Lượt 2: chọn bằng chuột, cảm xúc mới "Bình an", mức 9 */
+    await typeId(page, '26012345');
+    await pickCard(page, 'Mệt mỏi');
+    T('Thẻ "Mệt mỏi" → "Chị chọn: Mệt mỏi"', (await text(page, '#emotion-picked')) === TXT.picked + 'Mệt mỏi');
+    await pickCard(page, 'Bình an');
+    T('Đổi sang "Bình an": chỉ 1 thẻ chọn, dòng chữ đổi theo', (await cards(page)).filter(c => c.selected).map(c => c.name).join() === 'Bình an' && (await text(page, '#emotion-picked')) === TXT.picked + 'Bình an');
+    T('Chuột: chạm chấm 9 → chọn mức 9', await pickLevel(page, 9));
+    T('Gửi (mức 9 chọn bằng chuột)', await submit(page));
+    await waitFor(page, "__qa.logs.filter(l => l.includes('Đã lưu')).length >= 2", 2000);
+    row = e.mock.state.rows[1] || {};
+    T('Payload lượt 2: level 9, part1 "9 - Tuyệt vời", part2 "Bình an", đủ 6 trường', row.level === 9 && row.part1 === '9 - Tuyệt vời' && row.part2 === 'Bình an' && Object.keys(row).sort().join(',') === 'ageMs,level,part1,part2,patientId,sessionId', JSON.stringify(row));
+    await restart(page);
+
+    /* Thiếu mã số mà bấm nút → nhắc ở ô mã số (như cũ), không nhắc mức trước */
+    await pickLevel(page, 4);
+    await pickCard(page, 'Vui vẻ');
+    await assertSafeUrl(page);
+    await page.click('#btn-submit');
+    await sleep(500);
+    T('Thiếu mã số, bấm nút → không gửi, toast lỗi mềm mã số (như cũ), focus ô mã số', e.mock.posts().length === 2 && (await toastText(page)) === TXT.idError && (await page.evaluate('document.activeElement.id')) === 'input-patient-id', await toastText(page));
+    /* B-03: mã sai + chưa chọn mức → lần bấm ĐẦU nhắc cả hai, focus chỗ lỗi đầu tiên (ô mã số) */
+    await page.evaluate("resetCheckin(); document.getElementById('toast').classList.remove('show'); true");
+    await typeId(page, '12ab');
+    await pickCard(page, 'Bình an');
+    await assertSafeUrl(page);
+    await page.click('#btn-submit');
+    await sleep(500);
+    lv = await level(page);
+    T('B-03: mã "12ab" + chưa mức, bấm 1 lần → không gửi; nhắc mã (toast + lỗi dưới ô) VÀ nhắc mức cạnh 10 chấm; focus ô mã số', e.mock.posts().length === 2 && (await toastText(page)) === TXT.idError && (await text(page, '#patient-id-error')) === TXT.idError && lv.error === TXT.levelError && lv.need && (await page.evaluate('document.activeElement.id')) === 'input-patient-id', JSON.stringify({ toast: await toastText(page), err: lv.error, need: lv.need, active: await page.evaluate('document.activeElement.id') }));
+    await typeId(page, '26012345');
+    await page.click('#btn-submit');
+    await sleep(400);
+    T('B-03: sửa mã đúng, bấm lại → vẫn không gửi, focus sang chấm 1', e.mock.posts().length === 2 && (await activeDot(page)) === '1' && (await level(page)).error === TXT.levelError);
+    const s = await qa(page);
+    T('Console: không console.error', s.errors.length === 0, JSON.stringify(s.errors));
+    saveConsole('level', e.consoleApi, e.browserLog, s);
+  } finally { await teardown(e); }
+}
+
+/* ================= shuffle: xáo 9 thẻ mỗi lượt mới (anh Thông yêu cầu 02/11/2026) ================= */
+async function scenarioShuffle() {
+  let e;
+  try {
+    e = await setup({ query: '?qaseed=7', height: 900 });
+    const { page } = e;
+    const order = () => page.evaluate("[...document.querySelectorAll('.capy-card')].map(c => c.dataset.emotion)");
+    /* Thứ tự nhìn thấy (trên → dưới, trái → phải) */
+    const visual = () => page.evaluate("[...document.querySelectorAll('.capy-card')].map(c => ({ n: c.dataset.emotion, r: c.getBoundingClientRect() })).sort((a, b) => (Math.round(a.r.top) - Math.round(b.r.top)) || (a.r.left - b.r.left)).map(x => x.n)");
+    const o1 = await order();
+    T('Mở trang (seed 7): đủ 9 thẻ, mỗi nhãn đúng 1 lần, đã dùng crypto.getRandomValues', o1.length === 9 && JSON.stringify(o1.slice().sort()) === JSON.stringify(CARDS.slice().sort()) && (await page.evaluate('__qa.rng')) >= 8, o1.join(' | '));
+    T('Thứ tự đã xáo (khác thứ tự gốc trong HTML)', JSON.stringify(o1) !== JSON.stringify(CARDS), o1.join(' | '));
+    T('Thứ tự DOM = thứ tự nhìn thấy (Tab và trình đọc màn hình đi đúng thứ tự hiển thị)', JSON.stringify(await visual()) === JSON.stringify(o1), (await visual()).join(' | '));
+    T('10 chấm KHÔNG xáo: vẫn 1 → 10', (await page.evaluate("[...document.querySelectorAll('.level-dot')].map(d => d.dataset.level).join()")) === '1,2,3,4,5,6,7,8,9,10');
+    /* Chọn vẫn đúng nhãn, payload không đổi */
+    await typeId(page, '26012345');
+    await pickLevel(page, 2);
+    T('Chọn "Cô đơn" ở vị trí đã xáo → đúng thẻ được chọn, dòng "Chị chọn" đúng', (await pickCard(page, 'Cô đơn')) && (await text(page, '#emotion-picked')) === TXT.picked + 'Cô đơn');
+    T('Gửi được', await submit(page));
+    await waitFor(page, "__qa.logs.some(l => l.includes('Đã lưu'))", 2000);
+    const row = e.mock.state.rows[0] || {};
+    T('Payload không đổi: đúng 6 trường, part2 "Cô đơn", level 2 (không có trường thứ tự thẻ)', Object.keys(row).sort().join(',') === 'ageMs,level,part1,part2,patientId,sessionId' && row.part2 === 'Cô đơn' && row.level === 2, JSON.stringify(row));
+    /* "Check-in khác" → xáo lại */
+    await restart(page);
+    const o2 = await order();
+    T('Bấm "Thực hiện check-in khác" → thứ tự mới (khác lượt trước), vẫn đủ 9 nhãn', JSON.stringify(o2) !== JSON.stringify(o1) && JSON.stringify(o2.slice().sort()) === JSON.stringify(CARDS.slice().sort()), o2.join(' | '));
+    T('… DOM = nhìn thấy sau khi xáo lại', JSON.stringify(await visual()) === JSON.stringify(o2));
+    T('Không lưu thứ tự vào máy (localStorage không có khóa nào của app sau khi gửi xong)', (await page.evaluate('localStorage.length')) === 0, await page.evaluate('JSON.stringify(Object.keys(localStorage))'));
+    /* Nạp lại cùng seed → đúng thứ tự lần đầu (xáo bằng getRandomValues, tái lập được); seed khác → thứ tự khác */
+    await page.navigate('about:blank');
+    await page.navigate(APP_URL + '?qaseed=7');
+    T('Nạp lại cùng seed 7 → cùng thứ tự lần mở đầu', JSON.stringify(await order()) === JSON.stringify(o1), (await order()).join(' | '));
+    await page.navigate(APP_URL + '?qaseed=12345');
+    const o3 = await order();
+    T('Seed khác (12345) → thứ tự khác', JSON.stringify(o3) !== JSON.stringify(o1), o3.join(' | '));
+    /* Fisher–Yates đều: 9000 lần xáo (dãy cố định) → mỗi nhãn đứng đầu / đứng cuối ~1000 lần */
+    const dist = await page.evaluate(`(() => { const first = {}, last = {}; for (let i = 0; i < 9000; i++) { shuffleCards(); const c = [...document.querySelectorAll('.capy-card')]; first[c[0].dataset.emotion] = (first[c[0].dataset.emotion] || 0) + 1; last[c[8].dataset.emotion] = (last[c[8].dataset.emotion] || 0) + 1; } return { first, last }; })()`);
+    const vals = Object.values(dist.first).concat(Object.values(dist.last));
+    T('Xáo đều: 9000 lần, mỗi nhãn đứng đầu và đứng cuối 850–1150 lần (kỳ vọng 1000)', Object.keys(dist.first).length === 9 && Object.keys(dist.last).length === 9 && vals.every(v => v >= 850 && v <= 1150), JSON.stringify(dist.first));
+    /* Máy không có crypto.getRandomValues → dùng Math.random, vẫn xáo đủ 9 thẻ */
+    const fb = await page.evaluate(`(() => { Object.defineProperty(window.crypto, 'getRandomValues', { configurable: true, value: undefined }); let n = 0; const mr = Math.random; Math.random = () => { n++; return mr(); }; const seen = new Set(); for (let i = 0; i < 50; i++) { shuffleCards(); seen.add([...document.querySelectorAll('.capy-card')].map(c => c.dataset.emotion).join('|')); } Math.random = mr; return { calls: n, distinct: seen.size, count: document.querySelectorAll('.capy-card').length }; })()`);
+    T('Dự phòng không có crypto.getRandomValues: dùng Math.random, vẫn 9 thẻ, ra nhiều thứ tự khác nhau', fb.calls >= 8 * 50 && fb.count === 9 && fb.distinct > 40, JSON.stringify(fb));
+    const s = await qa(page);
+    T('Console: không console.error', s.errors.length === 0, JSON.stringify(s.errors));
+    saveConsole('shuffle', e.consoleApi, e.browserLog, s);
+  } finally { await teardown(e); }
+}
+
+/* ================= oldserver: Apps Script còn bản cũ trả emotion_invalid → giữ lượt, gửi lại khi máy chủ mới (NÊN SỬA 2) ================= */
+async function scenarioOldServer() {
+  let e;
+  try {
+    e = await setup({});
+    const { page } = e;
+    e.mock.state.mode = 'emotion_invalid';
+    await typeId(page, '26012345');
+    await pickLevel(page, 2);
+    await pickCard(page, 'Mệt mỏi');
+    T('Gửi "Mệt mỏi" khi máy chủ còn bản cũ: trang cảm ơn vẫn hiện', await submit(page));
+    await waitFor(page, '__qa.warns.length > 0', 3000);
+    let s = await qa(page);
+    let q = await queue(page);
+    T('emotion_invalid → GIỮ lượt trong hàng chờ (1 lượt "Mệt mỏi"), warn "Chưa gửi được … emotion_invalid", không "từ chối"', e.mock.posts().length === 1 && q.length === 1 && q[0].payload.part2 === 'Mệt mỏi' && s.warns.some(w => w.startsWith(TXT.warnRetry) && /emotion_invalid/.test(w)) && !s.warns.some(w => w.startsWith(TXT.warnReject)), JSON.stringify({ warns: s.warns, q: q.length }));
+    T('Không console.error, không alert, không log "Đã lưu"', s.errors.length === 0 && s.alerts.length === 0 && !s.logs.some(l => l.startsWith(TXT.logSaved)));
+    /* Lỗi dữ liệu khác (patient_id_invalid) vẫn bỏ như cũ */
+    await restart(page);
+    e.mock.state.mode = 'reject';
+    await typeId(page, '26012345');
+    await pickLevel(page, 5);
+    await pickCard(page, 'Vui vẻ');
+    await submit(page);
+    await waitFor(page, '__qa.warns.length > 1', 3000);
+    s = await qa(page);
+    T('patient_id_invalid vẫn bỏ khỏi hàng chờ (gửi lại vô ích) – hàng chờ vẫn chỉ lượt "Mệt mỏi"', s.warns.some(w => w.startsWith(TXT.warnReject)) && (await queue(page)).length === 1, JSON.stringify(await queue(page)));
+    /* Anh cập nhật Apps Script → tải lại trang: lượt "Mệt mỏi" tự gửi, đúng 1 dòng */
+    e.mock.state.mode = 'ok';
+    const before = e.mock.state.rows.length;
+    await page.navigate(APP_URL);
+    await waitFor(page, "!localStorage.getItem('checkin_me_bau_queue')", 3000);
+    const added = e.mock.state.rows.slice(before);
+    T('Máy chủ đã cập nhật, mở lại trang → gửi lại lượt "Mệt mỏi" (level 2), đúng 1 dòng, hàng chờ trống', added.length === 1 && added[0].part2 === 'Mệt mỏi' && added[0].level === 2 && (await queue(page)).length === 0, JSON.stringify(added));
+    /* Hàng chờ trên máy từ web bản 01/11 (6 cảm xúc) còn lượt "Buồn": bản mới vẫn gửi nguyên chữ (Apps Script mới nhận nhãn cũ) */
+    const tap0 = Date.now() - 3600e3;
+    await page.evaluate(`localStorage.setItem('checkin_me_bau_queue', JSON.stringify([{ payload: { sessionId: 'sess-legacy-buon-0001', tappedAt: ${tap0}, patientId: '26012345', level: 3, part1: '3 - Tồi tệ', part2: 'Buồn' }, queuedAt: ${tap0} }])); true`);
+    const before2 = e.mock.state.rows.length;
+    await page.navigate(APP_URL);
+    await waitFor(page, "!localStorage.getItem('checkin_me_bau_queue')", 3000);
+    const legacy = e.mock.state.rows.slice(before2);
+    T('Hàng chờ cũ có lượt "Buồn" (web bản 01/11): mở bản mới → gửi đi NGUYÊN "Buồn", level 3, đúng Mã phiên, hàng chờ trống', legacy.length === 1 && legacy[0].part2 === 'Buồn' && legacy[0].level === 3 && legacy[0].sessionId === 'sess-legacy-buon-0001' && (await queue(page)).length === 0, JSON.stringify(legacy));
+    s = await qa(page);
+    saveConsole('oldserver', e.consoleApi, e.browserLog, s);
+  } finally { await teardown(e); }
+}
+
 /* ================= patientid: Mã số bệnh nhân (01/11/2026) – chỉ chữ số, 3–20 số ================= */
 async function scenarioPatientId() {
   let e;
@@ -466,7 +700,8 @@ async function scenarioPatientId() {
     e = await setup({});
     const { page } = e;
     const tryId = async (v) => { await typeId(page, v); await sleep(30); const b = await btn(page); return { v, enabled: !b.disabled && b.ready, hint: await hint(page), err: await text(page, '#patient-id-error'), value: await idVal(page) }; };
-    await pickCard(page, 'Buồn');
+    await pickLevel(page, 5);
+    await pickCard(page, 'Đau khổ');
     const cases = [
       ['12', false], ['1'.repeat(21), false], ['HV123', false], ['=1+1', false], ['abcdefghi', false], ['26012345abc', false], ['(026) 012345', false],
       ['26012345', true], ['0012345', true], ['260 123 45', true], ['260.123.45', true], ['260-123-45', true], ['   26012345   ', true], ['123', true], ['1'.repeat(20), true]
@@ -496,6 +731,7 @@ async function scenarioPatientId() {
 
     /* Gọi submitCheckin() trực tiếp khi chưa đủ điều kiện: toast, không alert, không POST */
     await typeId(page, '=1+1');
+    await pickLevel(page, 5);
     await pickCard(page, 'Vui vẻ');
     await page.evaluate('submitCheckin(); true');
     let s = await qa(page);
@@ -503,9 +739,10 @@ async function scenarioPatientId() {
     /* Đang ở trang check-in (nút "check-in khác" ẩn) → làm sạch form bằng resetCheckin(); ẩn toast cũ */
     await page.evaluate("resetCheckin(); document.getElementById('toast').classList.remove('show'); true");
     await typeId(page, '26012345');
+    await pickLevel(page, 4);
     await page.evaluate('submitCheckin(); true');
     s = await qa(page);
-    T('submitCheckin() có mã số, chưa thẻ → toast "' + TXT.toastCard + '", không POST', (await toastText(page)) === TXT.toastCard && s.alerts.length === 0 && e.mock.state.rows.length === 1, await toastText(page));
+    T('submitCheckin() có mã số + mức, chưa thẻ → toast "' + TXT.toastCard + '", không POST', (await toastText(page)) === TXT.toastCard && s.alerts.length === 0 && e.mock.state.rows.length === 1, await toastText(page));
     T('Toast có role="status" (trình đọc màn hình đọc được)', (await page.evaluate("document.getElementById('toast').getAttribute('role')")) === 'status');
     T('Console: không console.error', s.errors.length === 0, JSON.stringify(s.errors));
     saveConsole('patientid', e.consoleApi, e.browserLog, s);
@@ -518,7 +755,7 @@ async function scenarioXss() {
   try {
     e = await setup({});
     const { page } = e;
-    await pickCard(page, 'Buồn');
+    await pickCard(page, 'Đau khổ');
     await typeId(page, '<img src=x onerror="window.__xssSummary=1">');
     await sleep(100);
     T('Mã số chứa HTML → nút KHÔNG bật', (await btn(page)).disabled);
@@ -544,6 +781,7 @@ async function scenarioOffline() {
     e = await setup({});
     const { page } = e;
     await typeId(page, '26012345');
+    await pickLevel(page, 2);
     await pickCard(page, 'Hoảng hốt');
     await page.send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
     T('Offline: navigator.onLine = false', !(await page.evaluate('navigator.onLine')));
@@ -576,7 +814,8 @@ async function scenarioOffline() {
 
     /* Lượt 2 offline, rồi có mạng lại mà KHÔNG tải lại trang → sự kiện online gửi lại */
     await typeId(page, '26012345');
-    await pickCard(page, 'Buồn');
+    await pickLevel(page, 6);
+    await pickCard(page, 'Đau khổ');
     await page.send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
     await submit(page);
     await waitFor(page, "JSON.parse(localStorage.getItem('checkin_me_bau_queue') || '[]').length === 1 && __qa.warns.length > 0", 3000);
@@ -597,6 +836,7 @@ async function scenarioDown() {
     const { page } = e;
     e.mock.state.mode = '500json';
     await typeId(page, '26012345');
+    await pickLevel(page, 4);
     await pickCard(page, 'Tức giận');
     T('500+JSON: trang cảm ơn vẫn hiện', await submit(page));
     await waitFor(page, '__qa.warns.length > 0', 3000);
@@ -606,6 +846,7 @@ async function scenarioDown() {
     await restart(page);
     e.mock.state.mode = '500text';
     await typeId(page, '26012345');
+    await pickLevel(page, 4);
     await pickCard(page, 'Khó chịu');
     T('500+HTML: trang cảm ơn vẫn hiện', await submit(page));
     await waitFor(page, '__qa.warns.length > 1', 3000);
@@ -614,6 +855,7 @@ async function scenarioDown() {
     await restart(page);
     e.mock.state.mode = 'reject';
     await typeId(page, '26012345');
+    await pickLevel(page, 8);
     await pickCard(page, 'Vui vẻ');
     T('Máy chủ từ chối (200 + result:error): trang cảm ơn vẫn hiện', await submit(page));
     await waitFor(page, '__qa.warns.length > 2', 3000);
@@ -641,6 +883,7 @@ async function scenarioHang() {
     /* Rút ngắn thời gian chờ để test nhanh (mặc định 15 s) */
     await page.evaluate('SEND_TIMEOUT_MS = 800; true');
     await typeId(page, '26012345');
+    await pickLevel(page, 8);
     await pickCard(page, 'Vui vẻ');
     const t0 = Date.now();
     const sent = await submit(page);
@@ -663,7 +906,8 @@ async function scenarioDouble() {
     e = await setup({});
     const { page } = e;
     await typeId(page, '26012345');
-    await pickCard(page, 'Buồn');
+    await pickLevel(page, 2);
+    await pickCard(page, 'Đau khổ');
     await waitReady(page);
     await assertSafeUrl(page);
     const { x, y } = await page.center('#btn-submit');
@@ -678,14 +922,16 @@ async function scenarioDouble() {
     T('Double tap: chữ nút "Đang lưu Check-in…" + class .sending (thôi đập nhịp)', (await btn(page)).text === TXT.btnSaving && (await page.evaluate("document.getElementById('btn-submit').classList.contains('sending')")), (await btn(page)).text);
     await restart(page);
     await typeId(page, '26012345');
-    await pickCard(page, 'Buồn');
+    await pickLevel(page, 2);
+    await pickCard(page, 'Đau khổ');
     await assertSafeUrl(page);
     await page.evaluate('submitCheckin(); submitCheckin(); true');
     await sleep(700);
     T('Gọi submitCheckin() 2 lần liên tiếp → chỉ thêm 1 POST (cờ isSending)', e.mock.posts().length === 2, e.mock.posts().length + ' POST');
     await restart(page);
     await typeId(page, '26012345');
-    await pickCard(page, 'Buồn');
+    await pickLevel(page, 2);
+    await pickCard(page, 'Đau khổ');
     await page.evaluate("document.getElementById('input-patient-id').focus(); true");
     await page.key('Enter');
     await sleep(300);
@@ -702,17 +948,21 @@ async function scenarioImgFail() {
   try {
     e = await setup({ height: 1400, failAssets: true });
     const { page } = e;
-    await waitFor(page, "document.getElementById('current-capy').hidden && document.querySelectorAll('.capy-img-box.fallback').length === 6", 3000);
+    await waitFor(page, "document.getElementById('current-capy').hidden && document.querySelectorAll('.capy-img-box.fallback').length === 9", 3000);
     let lv = await level(page);
-    T('Ảnh mức 404: ẩn <img>, hiện emoji 😐 trong khung 130×130', lv.natural === 0 && lv.imgHidden && !lv.emojiHidden && lv.emoji === '😐' && Math.round(lv.ew) === 130 && Math.round(lv.eh) === 130, JSON.stringify(lv));
-    await setSlider(page, 1);
+    T('Chưa chọn mức: khung 130×130 hiện hoa 🌸, không tải ảnh mức', lv.imgHidden && !lv.emojiHidden && lv.emoji === '🌸' && lv.src === '' && Math.round(lv.ew) === 130 && Math.round(lv.eh) === 130, JSON.stringify(lv));
+    await pickLevel(page, 5);
+    await waitFor(page, "document.getElementById('current-capy').hidden && document.getElementById('current-capy-emoji').textContent === '😐'", 2000);
+    lv = await level(page);
+    T('Ảnh mức 404 (chọn mức 5): ẩn <img>, hiện emoji 😐 trong khung 130×130', lv.natural === 0 && lv.imgHidden && !lv.emojiHidden && lv.emoji === '😐' && Math.round(lv.ew) === 130 && Math.round(lv.eh) === 130, JSON.stringify(lv));
+    await pickLevel(page, 1);
     await sleep(300);
     lv = await level(page);
     T('Ảnh mức 404 khi kéo sang mức 1: emoji đổi thành 😞, alt vẫn đổi theo mức', lv.imgHidden && lv.emoji === '😞' && lv.alt === 'Bé Capybara mức 1: Tuyệt vọng', JSON.stringify(lv));
     const cs = await cards(page);
-    T('Ảnh thẻ 404: 6 khung chuyển .fallback, hiện đúng emoji theo cảm xúc', cs.every(c => c.fallback && c.after === '"' + CARD_EMOJI[c.name] + '"'), JSON.stringify(cs.map(c => c.name + ':' + c.after)));
-    const boxes = await page.evaluate("[...document.querySelectorAll('.capy-img-box')].map(b => Math.round(b.getBoundingClientRect().width) + 'x' + Math.round(b.getBoundingClientRect().height)).join(',')");
-    T('Ảnh thẻ 404: khung 82×82 giữ nguyên', boxes === Array(6).fill('82x82').join(','), boxes);
+    T('Ảnh thẻ 404: 9 khung .fallback (9 ảnh thẻ lỗi), hiện đúng emoji theo cảm xúc', cs.length === 9 && cs.every(c => c.fallback && c.after === '"' + CARD_EMOJI[c.name] + '"'), JSON.stringify(cs.map(c => c.name + ':' + c.after)));
+    const boxes = await page.evaluate("[...document.querySelectorAll('.capy-img-box')].map(b => Math.round(b.getBoundingClientRect().width) + 'x' + Math.round(b.getBoundingClientRect().height))");
+    T('Ảnh thẻ 404: 9 khung vuông bằng nhau, ≥ 60 px', boxes.length === 9 && new Set(boxes).size === 1 && boxes.every(x => { const [w, h] = x.split('x').map(Number); return w === h && w >= 60; }), boxes.join(','));
     T('Ảnh 404: không tràn ngang', await page.evaluate('document.documentElement.scrollWidth <= innerWidth'));
     await page.evaluate("document.getElementById('emotion-display-area').scrollIntoView({block:'start'}); true");
     await page.screenshot(path.join(OUT, 'shot-imgfail-375.png'), true);
@@ -736,27 +986,58 @@ async function scenarioLayout() {
       const over = [...document.querySelectorAll('body *')].filter(el => !el.matches('#fireworks-canvas, #music-hint, #toast, audio, source')).filter(el => { const b = el.getBoundingClientRect(); return b.width > 0 && (b.right > innerWidth + 0.5 || b.left < -0.5); }).map(el => el.tagName + '.' + el.className).slice(0, 6);
       const cols = getComputedStyle(document.querySelector('.emotion-grid')).gridTemplateColumns.split(' ').length;
       /* chỉ đo phần tử đang hiện (.btn-restart ở trang cảm ơn đang ẩn → bỏ) */
-      const taps = ['#input-patient-id', '#emotion-range', '.capy-card', '#btn-submit', '#music-toggle-btn', '.btn-restart', '.support-summary'].map(s => { const b = document.querySelector(s).getBoundingClientRect(); return b.width > 0 ? s + ':' + Math.round(b.width) + 'x' + Math.round(b.height) : null; }).filter(Boolean);
+      const taps = ['#input-patient-id', '#btn-submit', '#music-toggle-btn', '.btn-restart', '.support-summary'].map(s => { const b = document.querySelector(s).getBoundingClientRect(); return b.width > 0 ? s + ':' + Math.round(b.width) + 'x' + Math.round(b.height) : null; }).filter(Boolean)
+        .concat([...document.querySelectorAll('.level-dot, .capy-card')].map(el => (el.dataset.level ? 'dot' + el.dataset.level : 'card') + ':' + Math.round(el.offsetWidth) + 'x' + Math.round(el.offsetHeight)));
+      /* 10 chấm xếp mấy hàng (đếm các mức top khác nhau) */
+      const dotRows = new Set([...document.querySelectorAll('.level-dot')].map(d => Math.round(d.offsetTop))).size;
+      const cardRows = new Set([...document.querySelectorAll('.capy-card')].map(d => Math.round(d.getBoundingClientRect().top))).size;
       const btn = r('#btn-submit');
       document.getElementById('music-hint').classList.add('show');
       const mh = r('#music-hint');
       document.getElementById('music-hint').classList.remove('show');
-      return { w: innerWidth, h: innerHeight, scrollW: document.documentElement.scrollWidth, scrollH: document.documentElement.scrollHeight, over, cols, taps,
+      return { w: innerWidth, h: innerHeight, scrollW: document.documentElement.scrollWidth, scrollH: document.documentElement.scrollHeight, over, cols, taps, dotRows, cardRows,
         musicPos: getComputedStyle(document.getElementById('music-toggle-btn')).position,
         musicOverBadge: inter(music, r('.badge-tag')), musicOverH1: inter(music, r('.main-title')), hintOverBadge: inter(mh, r('.badge-tag')), hintOverH1: inter(mh, r('.main-title')), musicRect: music,
         hintLeft: mh.l, hintRight: mh.r, btnTop: btn.t, btnBottom: btn.b };
     })()`);
     let m = await measure();
-    T('375×667: không tràn ngang, 2 cột thẻ', m.scrollW <= 375 && m.over.length === 0 && m.cols === 2, JSON.stringify({ scrollW: m.scrollW, over: m.over, cols: m.cols }));
-    T('375: vùng chạm chính ≥ 44 px (kể cả thanh trượt và "Hỗ trợ")', m.taps.every(t => { const [w, h] = t.split(':')[1].split('x').map(Number); return w >= 44 && h >= 44; }), m.taps.join(','));
+    T('375×667: không tràn ngang, thẻ 3×3, chấm 2 hàng × 5', m.scrollW <= 375 && m.over.length === 0 && m.cols === 3 && m.cardRows === 3 && m.dotRows === 2, JSON.stringify({ scrollW: m.scrollW, over: m.over, cols: m.cols, cardRows: m.cardRows, dotRows: m.dotRows }));
+    T('375: vùng chạm chính ≥ 44 px (10 chấm, 9 thẻ, nút, "Hỗ trợ")', m.taps.every(t => { const [w, h] = t.split(':')[1].split('x').map(Number); return w >= 44 && h >= 44; }), m.taps.join(','));
     T('Nút nhạc nằm trong card (không position:fixed) → không đè nội dung khi cuộn', m.musicPos !== 'fixed', m.musicPos);
     T('375: nút nhạc và gợi ý nhạc không đè lên eyebrow/h1', m.musicOverBadge === 0 && m.musicOverH1 === 0 && m.hintOverBadge === 0 && m.hintOverH1 === 0, JSON.stringify({ badge: m.musicOverBadge, h1: m.musicOverH1, hb: m.hintOverBadge, hh: m.hintOverH1 }));
     T('375×667: nút Hoàn thành nằm dưới màn đầu (phải cuộn ~' + Math.round(m.btnTop - 667) + ' px), trang cao ' + m.scrollH + ' px', m.btnTop > 667, 'btnTop=' + Math.round(m.btnTop));
     await page.screenshot(path.join(OUT, 'shot-layout-375-top.png'), false);
+    /* 360 px (điện thoại Android phổ biến): 2 hàng × 5 chấm, thẻ 3×3, chọn chấm 10 (phóng to) vẫn không tràn */
+    await page.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 640, deviceScaleFactor: 2, mobile: true });
+    await sleep(200);
+    await pickLevel(page, 10);
+    await pickLevel(page, 5);
+    m = await measure();
+    T('360×640: chấm 2 hàng × 5, thẻ 3×3, không tràn ngang (kể cả khi chấm đang phóng)', m.scrollW <= 360 && m.over.length === 0 && m.dotRows === 2 && m.cols === 3 && m.cardRows === 3, JSON.stringify({ scrollW: m.scrollW, over: m.over, dotRows: m.dotRows, cols: m.cols }));
+    T('360: mọi chấm, thẻ, nút ≥ 44×44 px', m.taps.every(t => { const [w, h] = t.split(':')[1].split('x').map(Number); return w >= 44 && h >= 44; }), m.taps.join(','));
+    await page.evaluate("document.getElementById('part-1').scrollIntoView({block:'start'}); true");
+    await page.screenshot(path.join(OUT, 'shot-layout-360-dots.png'), false);
+    /* Màn rộng: 1 hàng 10 chấm */
+    await page.send('Emulation.setDeviceMetricsOverride', { width: 768, height: 1024, deviceScaleFactor: 1, mobile: false });
+    await sleep(200);
+    m = await measure();
+    T('768 px: 10 chấm một hàng, không tràn ngang', m.dotRows === 1 && m.scrollW <= 768 && m.over.length === 0, JSON.stringify({ dotRows: m.dotRows, scrollW: m.scrollW }));
+    /* Gợi ý 5 review: 600–700 px lưới 10 chấm từng tràn ~2 px khỏi khung nhóm */
+    const fit = [];
+    for (const w of [600, 620, 640, 660, 700]) {
+      await page.send('Emulation.setDeviceMetricsOverride', { width: w, height: 900, deviceScaleFactor: 1, mobile: false });
+      await sleep(120);
+      fit.push(await page.evaluate(`(() => { const g = document.getElementById('level-dots'); const ds = [...g.querySelectorAll('.level-dot')]; const gb = g.getBoundingClientRect(); const cs = getComputedStyle(g);
+        const innerL = gb.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft), innerR = gb.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight);
+        const L = Math.min(...ds.map(d => d.offsetLeft + gb.left)), R = Math.max(...ds.map(d => d.offsetLeft + d.offsetWidth + gb.left));
+        return { w: ${w}, sw: g.scrollWidth, cw: g.clientWidth, rows: new Set(ds.map(d => d.offsetTop)).size, ok: g.scrollWidth <= g.clientWidth && new Set(ds.map(d => d.offsetTop)).size === 1 }; })()`));
+    }
+    T('600–700 px: 10 chấm một hàng, không tràn khung nhóm (scrollWidth ≤ clientWidth)', fit.every(f => f.ok), JSON.stringify(fit));
+    await page.screenshot(path.join(OUT, 'shot-layout-768.png'), true);
     await page.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 568, deviceScaleFactor: 2, mobile: true });
     await sleep(200);
     m = await measure();
-    T('320×568: không tràn ngang, 2 cột thẻ', m.scrollW <= 320 && m.over.length === 0 && m.cols === 2, JSON.stringify({ scrollW: m.scrollW, over: m.over, cols: m.cols }));
+    T('320×568: không tràn ngang, thẻ 3×3, chấm 2 hàng', m.scrollW <= 320 && m.over.length === 0 && m.cols === 3 && m.dotRows === 2, JSON.stringify({ scrollW: m.scrollW, over: m.over, cols: m.cols, dotRows: m.dotRows }));
     T('320: nút nhạc và gợi ý nhạc không đè lên eyebrow/h1', m.musicOverBadge === 0 && m.musicOverH1 === 0 && m.hintOverBadge === 0 && m.hintOverH1 === 0, JSON.stringify({ badge: m.musicOverBadge, h1: m.musicOverH1, hb: m.hintOverBadge, hh: m.hintOverH1, music: m.musicRect }));
     T('320: gợi ý nhạc không lọt ra ngoài trái màn', m.hintLeft >= 0, 'hintLeft=' + Math.round(m.hintLeft) + ' hintRight=' + Math.round(m.hintRight));
     T('320: vùng chạm chính ≥ 44 px', m.taps.every(t => { const [w, h] = t.split(':')[1].split('x').map(Number); return w >= 44 && h >= 44; }), m.taps.join(','));
@@ -765,8 +1046,9 @@ async function scenarioLayout() {
     await page.screenshot(path.join(OUT, 'shot-layout-320-full.png'), true);
     /* Trang cảm ơn ở 320 */
     await typeId(page, '26012345');
+    await pickLevel(page, 8);
     await pickCard(page, 'Vui vẻ');
-    await submit(page);
+    T('320: gửi được', await submit(page));
     await sleep(1200);
     const sw = await page.evaluate('document.documentElement.scrollWidth');
     T('320: trang cảm ơn không tràn ngang', sw <= 320, sw);
@@ -786,6 +1068,7 @@ async function scenarioReduced() {
     const animLoad = await page.evaluate("({ page: getComputedStyle(document.getElementById('page-checkin')).animationName, capy: getComputedStyle(document.getElementById('current-capy')).animationName })");
     T('reduce: tắt fadeIn của trang và gentlePop của ảnh mức', animLoad.page === 'none' && animLoad.capy === 'none', JSON.stringify(animLoad));
     await typeId(page, '26012345');
+    await pickLevel(page, 8);
     await pickCard(page, 'Vui vẻ');
     await waitReady(page);
     const b = await btn(page);
@@ -837,6 +1120,7 @@ async function scenarioNoAdmin() {
     T('Không còn modal / hàm quản trị (admin-modal, openAdminPanel, fetchHistory, deleteCheckin)', (await page.evaluate("!document.getElementById('admin-modal') && typeof openAdminPanel === 'undefined' && typeof fetchHistory === 'undefined' && typeof deleteCheckin === 'undefined'")));
     await typeId(page, '0967791552');
     await sleep(200);
+    await pickLevel(page, 5);
     await pickCard(page, 'Vui vẻ');
     T('Gõ 0967791552 (số admin cũ): chỉ là một mã số bình thường, không mở gì, ô không bị xóa, nút bật', (await idVal(page)) === '0967791552' && !!(await waitReady(page)) && (await page.evaluate("document.querySelectorAll('table, [role=dialog]').length")) === 0);
     T('Không XSS từ dữ liệu cũ', (await page.evaluate('window.__xssAdmin')) === undefined || (await page.evaluate('window.__xssAdmin')) === null);
@@ -866,7 +1150,8 @@ async function scenarioSharedKeys() {
     await page.click('#music-toggle-btn');
     await sleep(800);
     await typeId(page, '26012345');
-    await pickCard(page, 'Buồn');
+    await pickLevel(page, 2);
+    await pickCard(page, 'Đau khổ');
     await page.send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
     await submit(page);
     await waitFor(page, '__qa.warns.length > 0', 3000);
@@ -886,7 +1171,7 @@ async function scenarioSharedKeys() {
 }
 
 /* ===== Chạy ===== */
-const SCENARIOS = { main: scenarioMain, keyboard: scenarioKeyboard, patientid: scenarioPatientId, xss: scenarioXss, offline: scenarioOffline, down: scenarioDown, hang: scenarioHang, double: scenarioDouble, imgfail: scenarioImgFail, layout: scenarioLayout, reduced: scenarioReduced, music: scenarioMusic, noadmin: scenarioNoAdmin, sharedkeys: scenarioSharedKeys };
+const SCENARIOS = { main: scenarioMain, keyboard: scenarioKeyboard, level: scenarioLevel, shuffle: scenarioShuffle, oldserver: scenarioOldServer, patientid: scenarioPatientId, xss: scenarioXss, offline: scenarioOffline, down: scenarioDown, hang: scenarioHang, double: scenarioDouble, imgfail: scenarioImgFail, layout: scenarioLayout, reduced: scenarioReduced, music: scenarioMusic, noadmin: scenarioNoAdmin, sharedkeys: scenarioSharedKeys };
 (async () => {
   const names = argv.only ? String(argv.only).split(',') : Object.keys(SCENARIOS);
   const before = fs.readFileSync(path.join(APP, 'script.js'), 'utf8');
@@ -902,7 +1187,7 @@ const SCENARIOS = { main: scenarioMain, keyboard: scenarioKeyboard, patientid: s
   scenarioName = 'dọn';
   T('Vệ sinh: test không ghi vào script.js (so byte trước/sau lần chạy)', fs.readFileSync(path.join(APP, 'script.js'), 'utf8') === before);
   T('AN TOÀN: đã xác nhận URL mock trước mỗi lần bấm Hoàn thành (' + safeChecks + ' lần)', safeChecks > 0);
-  T('Vệ sinh: không file lạ trong thư mục app (ngoài tests/)', fs.readdirSync(APP).filter(f => !['.git', '.gitignore', 'NGUON.md', 'README.md', 'google_apps_script.js', 'google_apps_script-du-an-cu.js', 'index.html', 'script.js', 'styles.css', 'upload.bat', 'upload.sh', 'tests', 'background-music.mp3'].includes(f) && !/^(capy-level-\d\d\.png|(vui|buon|khoc|tuc|hoang_hot|kho_chiu)\.jpg)$/.test(f)).length === 0, fs.readdirSync(APP).join(','));
+  T('Vệ sinh: không file lạ trong thư mục app (ngoài tests/)', fs.readdirSync(APP).filter(f => !['.git', '.gitignore', 'NGUON.md', 'README.md', 'google_apps_script.js', 'google_apps_script-du-an-cu.js', 'index.html', 'script.js', 'styles.css', 'upload.bat', 'upload.sh', 'tests', 'background-music.mp3'].includes(f) && !/^(capy-level-\d\d\.png|(vui|buon|khoc|tuc|hoang_hot|kho_chiu)\.jpg|(vui_ve|dau_kho|lo_lang|tuc_gian|hoang_hot|kho_chiu|met_moi|binh_an|co_don)\.png)$/.test(f)).length === 0, fs.readdirSync(APP).join(','));
   const pass = results.filter(r => r.startsWith('PASS')).length;
   const flaky = results.filter(r => r.startsWith('CHẬP CHỜN')).length;
   const total = results.filter(r => /^(PASS|FAIL|CRASH|CHẬP)/.test(r)).length;

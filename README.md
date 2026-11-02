@@ -1,8 +1,36 @@
 # Check-in Cảm Xúc Mẹ Bầu
 
 App một trang (cỡ S, biến thể Hồng ấm) để thai phụ check-in cảm xúc:
-nhập **Mã số bệnh nhân** → kéo thanh trượt 10 mức → chọn 1 trong 6 bé Capybara → bấm "Hoàn thành" →
-lượt được ghi vào Google Sheet → trang cảm ơn tick xanh → làm lượt khác.
+nhập **Mã số bệnh nhân** → chạm 1 trong **10 chấm mức** (không có mức mặc định) → chọn 1 trong **9 bé Capybara**
+(thẻ chỉ có hình) → bấm "Hoàn thành" → lượt được ghi vào Google Sheet → trang cảm ơn tick xanh → làm lượt khác.
+
+## Bản 02/11/2026 (chưa đẩy)
+
+- **10 chấm** thay thanh trượt: 2 hàng × 5 trên điện thoại, 1 hàng 10 trên màn ≥ 600 px; mỗi chấm ≥ 44×44 px, màu của mức.
+  Chưa chọn mức thì nút Hoàn thành mờ (`aria-disabled`); chạm vào thì app nhắc "Chị chạm chọn một mức từ 1 đến 10 nhé."
+  cạnh khu chấm và đưa focus tới chấm 1. Bàn phím: Tab vào nhóm, mũi tên/Home/End đổi mức, Space chọn.
+  Gửi đi vẫn `level` số nguyên 1–10.
+- **9 cảm xúc** (tên theo bộ ảnh mới anh gửi): Vui vẻ, Đau khổ, Lo lắng, Tức giận, Hoảng hốt, Khó chịu, Mệt mỏi, Bình an, Cô đơn.
+  Thẻ chỉ hiện hình; tên đọc qua `aria-label`, ghi vào Sheet, và hiện dòng "Chị chọn: …" dưới lưới.
+  Apps Script vẫn nhận nhãn cũ "Buồn" (web bản 01/11, hàng chờ cũ trên máy) và ghi nguyên chữ.
+- **Xáo thứ tự 9 thẻ** mỗi lượt check-in mới (mở trang, "check-in khác") để chị không thiên về thẻ đứng đầu
+  (Fisher–Yates + `crypto.getRandomValues`). 10 chấm giữ 1 → 10. Không lưu thứ tự, payload không đổi.
+- Máy chủ trả `emotion_invalid` (Apps Script còn bản cũ) thì lượt **được giữ** trong hàng chờ để gửi lại.
+- Apps Script: tab CheckIn hết hàng trống thì tự thêm 500 hàng rồi ghi (trước đây từ lượt thứ 1000 bị mất).
+- **Ảnh thẻ**: `vui_ve.png`, `dau_kho.png`, `lo_lang.png`, `tuc_gian.png`, `hoang_hot.png`, `kho_chiu.png`, `met_moi.png`,
+  `binh_an.png`, `co_don.png`: PNG 480×480 nền trong suốt, 47–59 KB/ảnh (nén từ ảnh gốc ~1,3–1,8 MB của anh:
+  cắt sát hình, đệm vuông lề 6 %, bảng màu 256). Các file `.jpg` cũ (vui, buon, khoc, tuc, hoang_hot, kho_chiu) không còn dùng.
+- **Google Sheet cho bác sĩ** (menu "Check-in" → "Cài tô màu + Tổng hợp + Tra cứu", chạy một lần):
+  tô màu dòng theo mức (ĐỎ 1–3 · VÀNG 4–5 · XANH 6–10), tab **Tổng hợp** (mỗi mã số một dòng),
+  tab **Tra cứu** (gõ mã ở ô B2), khóa cứng các tab trừ ô B2. Cách chia sẻ cho bác sĩ ở đầu `google_apps_script.js` (BƯỚC 5).
+
+### Thứ tự triển khai
+
+1. **Apps Script trước**: dán `google_apps_script.js`, chạy thử, cập nhật bản triển khai AKfycbzfN8… lên Phiên bản mới
+   (giữ URL) – BƯỚC 1–3 ở đầu file. Script mới vẫn nhận web cũ (6 cảm xúc).
+2. Chạy menu cài tô màu + Tổng hợp + Tra cứu (BƯỚC 4), chia sẻ cho bác sĩ (BƯỚC 5).
+3. **Web sau**, khi đã có ảnh 3 cảm xúc mới: `./upload.sh` (BƯỚC 6). Đẩy web trước khi xong bước 1 thì lượt chọn
+   3 cảm xúc mới bị Apps Script cũ từ chối và mất.
 
 Web: https://ditruyenhungvuong.github.io/checkin-V2/
 
@@ -19,8 +47,8 @@ Web: https://ditruyenhungvuong.github.io/checkin-V2/
 | File | Việc |
 |---|---|
 | `index.html`, `styles.css`, `script.js` | Giao diện và logic. `script.js` dòng 6 là `GOOGLE_SCRIPT_URL` (URL thật). |
-| `google_apps_script.js` | Apps Script cho **dự án mới** (Sheet "Check-in Cảm Xúc Mẹ Bầu – bản an toàn 30-10-2026", URL AKfycbzfN8…). Hướng dẫn cài ở đầu file. |
-| `google_apps_script-du-an-cu.js` | Bản 29/10 cho **dự án cũ** (URL AKfycbzSx6…), nơi app bản 9/2026 vẫn gửi SĐT. Chỉ dùng để tắt doGet ở dự án cũ. |
+| `google_apps_script.js` | Apps Script cho **dự án mới** (Sheet "Check-in Cảm Xúc Mẹ Bầu – bản an toàn 30-10-2026", URL AKfycbzfN8…): doPost + menu bảng cho bác sĩ. Hướng dẫn cài ở đầu file. |
+| `google_apps_script-du-an-cu.js` | Bản 29/10 cho **dự án cũ** (URL AKfycbzSx6…, hai bản triển khai đã lưu trữ 02/11/2026). Giữ để đối chiếu, không dán lại. |
 | `upload.sh` / `upload.bat` | Đẩy lên GitHub (Ubuntu / Windows). Chặn đẩy nếu `script.js` còn URL cũ. |
 | `tests/` | Rà nội dung, giả lập Apps Script, e2e Chrome headless. |
 

@@ -25,10 +25,11 @@ const QUEUE_MAX = 20;
 const QUEUE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Dữ liệu lượt check-in hiện tại
+// 02/11/2026: KHÔNG có mức mặc định (anh Thông yêu cầu), part1_score = 0 nghĩa là chưa chọn
 let currentCheckin = {
     sessionId: '',
-    part1_score: 5,
-    part1_text: 'Bình thường (Ổn)',
+    part1_score: 0,
+    part1_text: '',
     part2_capybara: ''
 };
 let isSending = false;
@@ -49,18 +50,25 @@ const emotionLevels = {
     10: { text: "Rất tuyệt vời",     color: "#1b5e20", image: "capy-level-10.png", emoji: "🥰" }
 };
 
-// 6 cảm xúc hợp lệ, PHẢI trùng EMOTION_LABELS trong google_apps_script.js
-const EMOTIONS = ['Vui vẻ', 'Buồn', 'Lo lắng', 'Tức giận', 'Hoảng hốt', 'Khó chịu'];
+// 9 cảm xúc hợp lệ, PHẢI trùng EMOTION_LABELS trong google_apps_script.js. Đây cũng là chuỗi ghi vào Sheet.
+// 02/11/2026 anh Thông chốt tên theo bộ ảnh mới: "Buồn" → "Đau khổ"; thêm "Mệt mỏi", "Bình an", "Cô đơn".
+const EMOTIONS = ['Vui vẻ', 'Đau khổ', 'Lo lắng', 'Tức giận', 'Hoảng hốt', 'Khó chịu', 'Mệt mỏi', 'Bình an', 'Cô đơn'];
 
 // Lời nhắc tiến độ dưới nút Hoàn thành
+// (all, level, LEVEL_ERROR, PICKED_PREFIX: đội viết 02/11/2026, chờ anh duyệt chữ)
 const HINTS = {
-    both:     "💡 Chị nhập mã số bệnh nhân và chạm chọn 1 bé Capybara là xong nhé.",
+    all:      "💡 Chị nhập mã số bệnh nhân, chạm chọn một mức và 1 bé Capybara là xong nhé.",
     id:       "💡 Chị nhập mã số bệnh nhân ở trên giúp mình nhé.",
     idBad:    "💡 Mã số bệnh nhân chưa đúng, chị xem lại giúp mình nhé.",
+    level:    "💡 Chị chạm chọn một mức cảm xúc ở Phần 1 nhé.",
     card:     "💡 Chị chạm chọn 1 bé Capybara ở Phần 2 nhé.",
     done:     "✨ Xong rồi, chị chạm nút Hoàn thành nhé!"
 };
 const ID_ERROR = "Chị nhập mã số bệnh nhân (chỉ gồm chữ số, ví dụ 26012345) nhé.";
+// Câu nhắc cạnh 10 chấm khi chị bấm Hoàn thành mà chưa chọn mức
+const LEVEL_ERROR = "Chị chạm chọn một mức từ 1 đến 10 nhé.";
+// Dòng chữ nhỏ dưới lưới thẻ (thẻ chỉ có hình): "Chị chọn: Mệt mỏi"
+const PICKED_PREFIX = "Chị chọn: ";
 const BTN_IDLE = "Hoàn thành Check-in →";
 const BTN_SENDING = "Đang lưu Check-in…";
 
@@ -273,38 +281,85 @@ function animateFireworks() {
 
 
 // ============================================================
-// 5. PHẦN 1: THANG ĐO CẢM XÚC (1 - 10)
+// 5. PHẦN 1: 10 CHẤM MỨC CẢM XÚC (1 - 10), radiogroup, không có mức mặc định
 // ============================================================
 
-function updateEmotionDisplay() {
-    const slider = $('emotion-range');
-    if (!slider) return;
+const levelDots = () => Array.prototype.slice.call(document.querySelectorAll('.level-dot'));
 
-    const val = parseInt(slider.value, 10);
-    const data = emotionLevels[val] || emotionLevels[5];
-    const label = `${val} - ${data.text}`;
+/** Vẽ lại ảnh, nhãn "7 - Tốt", trạng thái 10 chấm theo currentCheckin.part1_score (0 = chưa chọn). */
+function renderLevel() {
+    const val = currentCheckin.part1_score;
+    const data = emotionLevels[val];
 
-    currentCheckin.part1_score = val;
-    currentCheckin.part1_text = data.text;
-
-    // Ảnh bé Capybara + alt đổi theo mức; emoji dự phòng luôn đúng mức
     const capyImg = $('current-capy');
-    if (capyImg) {
-        if (!capyImg.src.endsWith(data.image)) capyImg.src = data.image;
-        capyImg.alt = `Bé Capybara mức ${val}: ${data.text}`;
-    }
     const capyEmoji = $('current-capy-emoji');
-    if (capyEmoji) capyEmoji.textContent = data.emoji;
+    if (data) {
+        // Ảnh bé Capybara + alt đổi theo mức; emoji dự phòng luôn đúng mức (hiện khi ảnh lỗi)
+        if (capyImg) {
+            if ((capyImg.getAttribute('src') || '') !== data.image) capyImg.src = data.image;
+            capyImg.alt = `Bé Capybara mức ${val}: ${data.text}`;
+        }
+        if (capyEmoji) capyEmoji.textContent = data.emoji;
+    } else {
+        // Chưa chọn mức: bỏ ảnh, khung hiện hoa
+        if (capyImg) { capyImg.removeAttribute('src'); capyImg.alt = ''; capyImg.hidden = true; }
+        if (capyEmoji) { capyEmoji.textContent = '🌸'; capyEmoji.hidden = false; }
+    }
 
     const statusEl = $('current-status');
     if (statusEl) {
-        statusEl.textContent = label;
-        statusEl.style.color = data.color;
+        statusEl.textContent = data ? `${val} - ${data.text}` : '';
+        statusEl.style.color = data ? data.color : '';
     }
-    slider.setAttribute('aria-valuetext', label);
 
-    if (navigator.vibrate) navigator.vibrate(5);
+    // Roving tabindex: chấm đang chọn nhận Tab; chưa chọn thì chấm 1 nhận Tab
+    levelDots().forEach(dot => {
+        const n = parseInt(dot.dataset.level, 10);
+        const on = n === val;
+        dot.classList.toggle('selected', on);
+        dot.setAttribute('aria-checked', on ? 'true' : 'false');
+        dot.tabIndex = (on || (!data && n === 1)) ? 0 : -1;
+    });
+}
+
+/** Chọn mức n (1..10). focus = true khi chọn bằng phím (đưa focus theo chấm mới). */
+function selectLevel(n, focus) {
+    const val = parseInt(n, 10);
+    if (!emotionLevels[val]) return;
+    currentCheckin.part1_score = val;
+    currentCheckin.part1_text = emotionLevels[val].text;
+    renderLevel();
+    showLevelError(false);
+    if (focus) {
+        const dot = document.querySelector('.level-dot[data-level="' + val + '"]');
+        if (dot) dot.focus();
+    }
+    if (navigator.vibrate) navigator.vibrate(15);
     checkFormCompletion();
+}
+
+/** Phím trong nhóm 10 chấm: mũi tên phải/xuống = mức kế, trái/lên = mức trước (vòng lại), Home/End = 1/10, Space = chọn chấm đang focus. */
+function onLevelKey(e) {
+    const dot = e.target.closest ? e.target.closest('.level-dot') : null;
+    if (!dot) return;
+    const cur = parseInt(dot.dataset.level, 10);
+    let next = 0;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = cur >= 10 ? 1 : cur + 1;
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = cur <= 1 ? 10 : cur - 1;
+    else if (e.key === 'Home') next = 1;
+    else if (e.key === 'End') next = 10;
+    else if (e.key === ' ' || e.key === 'Spacebar') next = cur;
+    else return;
+    e.preventDefault(); // không cuộn trang
+    selectLevel(next, true);
+}
+
+/** Câu nhắc cạnh 10 chấm (bấm Hoàn thành khi chưa chọn mức). */
+function showLevelError(on) {
+    const el = $('level-error');
+    if (el) el.textContent = on ? LEVEL_ERROR : '';
+    const group = $('level-dots');
+    if (group) group.classList.toggle('need', !!on);
 }
 
 /* Ảnh lỗi (thiếu file, mạng yếu) → thay bằng emoji, theo style guide mục 3 */
@@ -344,7 +399,46 @@ function selectCapybara(emotionName, cardEl) {
     });
 
     currentCheckin.part2_capybara = emotionName;
+    renderPicked();
     checkFormCompletion();
+}
+
+/**
+ * Số ngẫu nhiên nguyên 0 … n−1. Dùng crypto.getRandomValues (bỏ phần dư để không lệch),
+ * máy không có thì dùng Math.random.
+ */
+function randomInt(n) {
+    if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+        const buf = new Uint32Array(1);
+        const limit = Math.floor(0x100000000 / n) * n;
+        let x;
+        do { window.crypto.getRandomValues(buf); x = buf[0]; } while (x >= limit);
+        return x % n;
+    }
+    return Math.floor(Math.random() * n);
+}
+
+/**
+ * Xáo thứ tự 9 thẻ mỗi lượt check-in mới (mở trang, "check-in khác") để chị không bị
+ * thiên về thẻ đứng đầu (anh Thông yêu cầu 02/11/2026). Fisher–Yates; dời chính các nút
+ * trong DOM nên thứ tự Tab / trình đọc màn hình trùng thứ tự nhìn thấy.
+ * KHÔNG xáo 10 chấm mức, KHÔNG lưu thứ tự vào máy, payload không đổi.
+ */
+function shuffleCards() {
+    const grid = document.querySelector('.emotion-grid');
+    if (!grid) return;
+    const cards = Array.prototype.slice.call(grid.querySelectorAll('.capy-card'));
+    for (let i = cards.length - 1; i > 0; i--) {
+        const j = randomInt(i + 1);
+        const t = cards[i]; cards[i] = cards[j]; cards[j] = t;
+    }
+    cards.forEach(card => grid.appendChild(card));
+}
+
+/* Thẻ chỉ có hình nên ghi một dòng chữ nhỏ dưới lưới để chị biết mình đã chọn gì */
+function renderPicked() {
+    const el = $('emotion-picked');
+    if (el) el.textContent = currentCheckin.part2_capybara ? PICKED_PREFIX + currentCheckin.part2_capybara : '';
 }
 
 
@@ -386,21 +480,24 @@ function checkFormCompletion() {
     // Chỉ nói "chưa đúng" khi lỗi mềm dưới ô đang hiện (không nhắc khi chị đang gõ dở)
     const input = $('input-patient-id');
     const idBad = !!(input && input.getAttribute('aria-invalid') === 'true');
+    const hasLevel = Boolean(emotionLevels[currentCheckin.part1_score]);
     const hasPart2 = Boolean(currentCheckin.part2_capybara);
 
     const btnSubmit = $('btn-submit');
     const hintEl = $('submit-hint');
     if (!btnSubmit || isSending) return;
 
-    const ready = hasId && hasPart2;
+    // Chưa đủ: nút mờ + aria-disabled nhưng VẪN chạm được, để submitCheckin nhắc đúng chỗ còn thiếu
+    const ready = hasId && hasLevel && hasPart2;
     btnSubmit.classList.toggle('ready', ready);
-    btnSubmit.disabled = !ready;
+    btnSubmit.setAttribute('aria-disabled', ready ? 'false' : 'true');
     if (!hintEl) return;
     hintEl.classList.toggle('done', ready);
     if (ready) hintEl.textContent = HINTS.done;
     else if (!hasId && idBad) hintEl.textContent = HINTS.idBad;
-    else if (!hasId && !hasPart2) hintEl.textContent = HINTS.both;
+    else if (!hasId && !hasLevel && !hasPart2) hintEl.textContent = HINTS.all;
     else if (!hasId) hintEl.textContent = HINTS.id;
+    else if (!hasLevel) hintEl.textContent = HINTS.level;
     else hintEl.textContent = HINTS.card;
 }
 
@@ -445,6 +542,9 @@ function sendCheckin(payload) {
             return true;
         }
         if (data && data.retry) throw new Error('máy chủ bận: ' + (data.error || ''));
+        // App chỉ gửi nhãn trong EMOTIONS, nên emotion_invalid nghĩa là Apps Script còn bản cũ
+        // (chưa nhận 3 cảm xúc mới): GIỮ lượt trong hàng chờ, gửi lại khi máy chủ được cập nhật.
+        if (data && data.error === 'emotion_invalid') throw new Error('máy chủ còn bản cũ: emotion_invalid');
         queueRemove(payload.sessionId);
         console.warn('[Check-in] Máy chủ từ chối lượt này, không gửi lại:', data);
         return false;
@@ -476,7 +576,18 @@ function submitCheckin() {
     if (!id) {
         showIdError(true);
         toast(ID_ERROR);
+        // Thiếu cả mức thì nhắc luôn cạnh 10 chấm (B-03), focus vẫn về chỗ lỗi đầu tiên là ô mã số
+        if (!emotionLevels[currentCheckin.part1_score]) showLevelError(true);
         if (idInput) idInput.focus();
+        return;
+    }
+    if (!emotionLevels[currentCheckin.part1_score]) {
+        // Chưa chọn mức: không gửi, nhắc ngay cạnh 10 chấm và đưa chị tới đó
+        showLevelError(true);
+        const group = $('level-dots');
+        if (group) group.scrollIntoView({ block: 'center', behavior: reduceMotion() ? 'auto' : 'smooth' });
+        const first = document.querySelector('.level-dot[tabindex="0"]');
+        if (first) first.focus({ preventScroll: true });
         return;
     }
     if (!currentCheckin.part2_capybara) {
@@ -582,8 +693,10 @@ function resetCheckin() {
     if (idInput) idInput.value = '';
     showIdError(false);
 
-    const slider = $('emotion-range');
-    if (slider) slider.value = 5;
+    // Không có mức mặc định: lượt mới bắt đầu chưa chọn chấm nào
+    currentCheckin.part1_score = 0;
+    currentCheckin.part1_text = '';
+    showLevelError(false);
 
     document.querySelectorAll('.capy-card').forEach(card => {
         card.classList.remove('selected');
@@ -592,14 +705,18 @@ function resetCheckin() {
 
     currentCheckin.sessionId = '';
     currentCheckin.part2_capybara = '';
+    renderPicked();
+    shuffleCards(); // lượt mới: thứ tự thẻ mới
     isSending = false;
 
     const btnSubmit = $('btn-submit');
     if (btnSubmit) {
         btnSubmit.textContent = BTN_IDLE;
+        btnSubmit.disabled = false;
         btnSubmit.classList.remove('sending');
     }
-    updateEmotionDisplay();
+    renderLevel();
+    checkFormCompletion();
 
     window.scrollTo({ top: 0, behavior: reduceMotion() ? 'auto' : 'smooth' });
 }
@@ -634,22 +751,25 @@ document.addEventListener('DOMContentLoaded', function () {
 
     initBgMusic();
     initSupport();
+    shuffleCards();
     setupImageFallbacks();
-    updateEmotionDisplay();
+    renderLevel();
+    checkFormCompletion();
 
     const idInput = $('input-patient-id');
     if (idInput) {
         idInput.addEventListener('input', onInputChange);
         idInput.addEventListener('blur', () => { showIdError(true); checkFormCompletion(); });
     }
-    const slider = $('emotion-range');
-    if (slider) slider.addEventListener('input', updateEmotionDisplay);
+    const dots = $('level-dots');
+    if (dots) dots.addEventListener('keydown', onLevelKey);
 
     document.addEventListener('click', function (e) {
         const el = e.target.closest('[data-act]');
         if (!el) return;
         const act = el.dataset.act;
         if (act === 'pick') selectCapybara(el.dataset.emotion, el);
+        else if (act === 'level') selectLevel(el.dataset.level, false);
         else if (act === 'submit') submitCheckin();
         else if (act === 'restart') resetCheckin();
         else if (act === 'music') toggleMusic();

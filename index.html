@@ -55,98 +55,121 @@
 
                 <hr class="section-divider">
 
-                <!-- PHẦN 1: ĐÁNH GIÁ MỨC CẢM XÚC 1 - 10 -->
+                <!-- PHẦN 1: ĐÁNH GIÁ MỨC CẢM XÚC 1 - 10 (02/11/2026: 10 chấm bấm thay thanh trượt, KHÔNG có mức mặc định) -->
                 <section class="form-section part-section" id="part-1">
                     <h2 class="section-title" id="part1-title">
-                        <span class="step-num">1</span> <span>Hôm nay chị cảm thấy thế nào?</span>
+                        <span class="step-num" aria-hidden="true">1</span> <span>Hôm nay chị cảm thấy thế nào?</span>
                     </h2>
-                    <p class="section-hint">Kéo thanh trượt, bé Capybara sẽ đổi mặt theo. Mức nào cũng được nhé.</p>
+                    <p class="section-hint">Chạm vào một chấm, bé Capybara sẽ đổi mặt theo. Mức nào cũng được nhé.</p>
 
                     <div id="emotion-display-area" class="emotion-display-area">
                         <div class="emotion-capy-frame">
-                            <img id="current-capy" class="emotion-capy" src="capy-level-05.png" alt="Bé Capybara mức 5: Bình thường (Ổn)" decoding="async">
-                            <span id="current-capy-emoji" class="emotion-capy emotion-emoji" aria-hidden="true" hidden>😐</span>
+                            <!-- Chưa chọn mức: chưa có ảnh, khung hiện hoa 🌸; chọn mức thì script.js đặt ảnh capy-level-NN.png -->
+                            <img id="current-capy" class="emotion-capy" alt="" decoding="async" hidden>
+                            <span id="current-capy-emoji" class="emotion-capy emotion-emoji" aria-hidden="true">🌸</span>
                         </div>
-                        <!-- Không aria-live: thanh trượt đã có aria-valuetext, tránh đọc mức hai lần -->
-                        <div id="current-status" class="emotion-status">5 - Bình thường (Ổn)</div>
                     </div>
 
-                    <div class="slider-container">
-                        <input type="range" min="1" max="10" value="5" id="emotion-range"
-                               class="styled-range" aria-labelledby="part1-title"
-                               aria-valuetext="5 - Bình thường (Ổn)">
-                        <div class="slider-labels" aria-hidden="true">
-                            <span>1 (Tuyệt vọng)</span>
-                            <span>10 (Rất tuyệt vời)</span>
-                        </div>
+                    <!-- 10 chấm: radiogroup, Tab vào nhóm, phím mũi tên đổi mức. Chưa chọn thì chấm 1 nhận Tab. -->
+                    <div id="level-dots" class="level-dots" role="radiogroup" aria-labelledby="part1-title" aria-describedby="level-error">
+                        <button type="button" class="level-dot" role="radio" aria-checked="false" tabindex="0" data-act="level" data-level="1" aria-label="Mức 1, Tuyệt vọng">1</button>
+                        <button type="button" class="level-dot" role="radio" aria-checked="false" tabindex="-1" data-act="level" data-level="2" aria-label="Mức 2, Rất tồi tệ">2</button>
+                        <button type="button" class="level-dot" role="radio" aria-checked="false" tabindex="-1" data-act="level" data-level="3" aria-label="Mức 3, Tồi tệ">3</button>
+                        <button type="button" class="level-dot" role="radio" aria-checked="false" tabindex="-1" data-act="level" data-level="4" aria-label="Mức 4, Kém">4</button>
+                        <button type="button" class="level-dot" role="radio" aria-checked="false" tabindex="-1" data-act="level" data-level="5" aria-label="Mức 5, Bình thường (Ổn)">5</button>
+                        <button type="button" class="level-dot" role="radio" aria-checked="false" tabindex="-1" data-act="level" data-level="6" aria-label="Mức 6, Tương đối tốt">6</button>
+                        <button type="button" class="level-dot" role="radio" aria-checked="false" tabindex="-1" data-act="level" data-level="7" aria-label="Mức 7, Tốt">7</button>
+                        <button type="button" class="level-dot" role="radio" aria-checked="false" tabindex="-1" data-act="level" data-level="8" aria-label="Mức 8, Rất tốt">8</button>
+                        <button type="button" class="level-dot" role="radio" aria-checked="false" tabindex="-1" data-act="level" data-level="9" aria-label="Mức 9, Tuyệt vời">9</button>
+                        <button type="button" class="level-dot" role="radio" aria-checked="false" tabindex="-1" data-act="level" data-level="10" aria-label="Mức 10, Rất tuyệt vời">10</button>
                     </div>
+                    <div class="level-legend" aria-hidden="true">
+                        <span>1 (Tuyệt vọng)</span>
+                        <span>10 (Rất tuyệt vời)</span>
+                    </div>
+                    <!-- Không aria-live: chấm đang chọn đã có nhãn "Mức 7, Tốt", tránh đọc hai lần -->
+                    <div id="current-status" class="emotion-status"></div>
+                    <p id="level-error" class="level-error" aria-live="polite"></p>
                 </section>
 
                 <hr class="section-divider">
 
-                <!-- PHẦN 2: GỌI TÊN CẢM XÚC (6 THẺ CAPYBARA)
-                     Mỗi thẻ là <button>: chọn được bằng bàn phím (Tab, Enter, Space) và trình đọc màn hình -->
+                <!-- PHẦN 2: GỌI TÊN CẢM XÚC (9 THẺ CAPYBARA, chỉ hình)
+                     02/11/2026: anh Thông gửi bộ 9 ảnh mới, tên cảm xúc theo tên file ảnh.
+                     Ảnh PNG 480×480 nền trong suốt (nén từ ảnh gốc của anh, ≤ 61 KB/ảnh).
+                     Mỗi thẻ là <button> có aria-label = tên cảm xúc (cũng là chuỗi ghi vào Sheet).
+                     Ảnh lỗi thì hiện emoji ở data-emoji. script.js xáo thứ tự 9 thẻ mỗi lượt mới (shuffleCards);
+                     thứ tự dưới đây chỉ là thứ tự gốc. -->
                 <section class="form-section part-section" id="part-2">
                     <h2 class="section-title" id="part2-title">
-                        <span class="step-num">2</span> <span>Cảm xúc hiện tại của chị giống bé Capybara nào nhất?</span>
+                        <span class="step-num" aria-hidden="true">2</span> <span>Cảm xúc hiện tại của chị giống bé Capybara nào nhất?</span>
                     </h2>
                     <p class="section-hint">Chạm chọn 1 bé giống chị nhất lúc này. Cảm xúc không đúng cũng không sai.</p>
 
                     <div class="emotion-grid" role="group" aria-labelledby="part2-title">
-                        <button type="button" class="capy-card" data-act="pick" data-emotion="Vui vẻ" aria-pressed="false">
+                        <button type="button" class="capy-card" data-act="pick" data-emotion="Vui vẻ" aria-label="Vui vẻ" aria-pressed="false">
                             <span class="capy-img-box" data-emoji="😊">
-                                <img src="vui.jpg" alt="" class="capy-img" decoding="async">
+                                <img src="vui_ve.png" alt="" class="capy-img" width="480" height="480" decoding="async">
                             </span>
-                            <span class="capy-name">Vui vẻ</span>
                             <span class="check-mark-badge" aria-hidden="true">✓</span>
                         </button>
-
-                        <button type="button" class="capy-card" data-act="pick" data-emotion="Buồn" aria-pressed="false">
+                        <button type="button" class="capy-card" data-act="pick" data-emotion="Đau khổ" aria-label="Đau khổ" aria-pressed="false">
                             <span class="capy-img-box" data-emoji="😢">
-                                <img src="buon.jpg" alt="" class="capy-img" decoding="async">
+                                <img src="dau_kho.png" alt="" class="capy-img" width="480" height="480" decoding="async">
                             </span>
-                            <span class="capy-name">Buồn</span>
                             <span class="check-mark-badge" aria-hidden="true">✓</span>
                         </button>
-
-                        <button type="button" class="capy-card" data-act="pick" data-emotion="Lo lắng" aria-pressed="false">
+                        <button type="button" class="capy-card" data-act="pick" data-emotion="Lo lắng" aria-label="Lo lắng" aria-pressed="false">
                             <span class="capy-img-box" data-emoji="😟">
-                                <img src="khoc.jpg" alt="" class="capy-img" decoding="async">
+                                <img src="lo_lang.png" alt="" class="capy-img" width="480" height="480" decoding="async">
                             </span>
-                            <span class="capy-name">Lo lắng</span>
                             <span class="check-mark-badge" aria-hidden="true">✓</span>
                         </button>
-
-                        <button type="button" class="capy-card" data-act="pick" data-emotion="Tức giận" aria-pressed="false">
+                        <button type="button" class="capy-card" data-act="pick" data-emotion="Tức giận" aria-label="Tức giận" aria-pressed="false">
                             <span class="capy-img-box" data-emoji="😠">
-                                <img src="tuc.jpg" alt="" class="capy-img" decoding="async">
+                                <img src="tuc_gian.png" alt="" class="capy-img" width="480" height="480" decoding="async">
                             </span>
-                            <span class="capy-name">Tức giận</span>
                             <span class="check-mark-badge" aria-hidden="true">✓</span>
                         </button>
-
-                        <button type="button" class="capy-card" data-act="pick" data-emotion="Hoảng hốt" aria-pressed="false">
+                        <button type="button" class="capy-card" data-act="pick" data-emotion="Hoảng hốt" aria-label="Hoảng hốt" aria-pressed="false">
                             <span class="capy-img-box" data-emoji="😨">
-                                <img src="hoang_hot.jpg" alt="" class="capy-img" decoding="async">
+                                <img src="hoang_hot.png" alt="" class="capy-img" width="480" height="480" decoding="async">
                             </span>
-                            <span class="capy-name">Hoảng hốt</span>
                             <span class="check-mark-badge" aria-hidden="true">✓</span>
                         </button>
-
-                        <button type="button" class="capy-card" data-act="pick" data-emotion="Khó chịu" aria-pressed="false">
+                        <button type="button" class="capy-card" data-act="pick" data-emotion="Khó chịu" aria-label="Khó chịu" aria-pressed="false">
                             <span class="capy-img-box" data-emoji="😣">
-                                <img src="kho_chiu.jpg" alt="" class="capy-img" decoding="async">
+                                <img src="kho_chiu.png" alt="" class="capy-img" width="480" height="480" decoding="async">
                             </span>
-                            <span class="capy-name">Khó chịu</span>
+                            <span class="check-mark-badge" aria-hidden="true">✓</span>
+                        </button>
+                        <button type="button" class="capy-card" data-act="pick" data-emotion="Mệt mỏi" aria-label="Mệt mỏi" aria-pressed="false">
+                            <span class="capy-img-box" data-emoji="😩">
+                                <img src="met_moi.png" alt="" class="capy-img" width="480" height="480" decoding="async">
+                            </span>
+                            <span class="check-mark-badge" aria-hidden="true">✓</span>
+                        </button>
+                        <button type="button" class="capy-card" data-act="pick" data-emotion="Bình an" aria-label="Bình an" aria-pressed="false">
+                            <span class="capy-img-box" data-emoji="😌">
+                                <img src="binh_an.png" alt="" class="capy-img" width="480" height="480" decoding="async">
+                            </span>
+                            <span class="check-mark-badge" aria-hidden="true">✓</span>
+                        </button>
+                        <button type="button" class="capy-card" data-act="pick" data-emotion="Cô đơn" aria-label="Cô đơn" aria-pressed="false">
+                            <span class="capy-img-box" data-emoji="🥺">
+                                <img src="co_don.png" alt="" class="capy-img" width="480" height="480" decoding="async">
+                            </span>
                             <span class="check-mark-badge" aria-hidden="true">✓</span>
                         </button>
                     </div>
+                    <p id="emotion-picked" class="emotion-picked"></p>
                 </section>
 
                 <!-- KHU VỰC NÚT HOÀN THÀNH -->
                 <div class="submit-section" id="submit-section">
-                    <p id="submit-hint" class="submit-hint" aria-live="polite">💡 Chị nhập mã số bệnh nhân và chạm chọn 1 bé Capybara là xong nhé.</p>
-                    <button type="button" id="btn-submit" class="btn-submit" data-act="submit" disabled>Hoàn thành Check-in →</button>
+                    <p id="submit-hint" class="submit-hint" aria-live="polite">💡 Chị nhập mã số bệnh nhân, chạm chọn một mức và 1 bé Capybara là xong nhé.</p>
+                    <!-- Chưa đủ: aria-disabled (không dùng disabled) để chạm vào vẫn được nhắc thiếu gì -->
+                    <button type="button" id="btn-submit" class="btn-submit" data-act="submit" aria-disabled="true" aria-describedby="submit-hint">Hoàn thành Check-in →</button>
                 </div>
 
                 <p class="footer-note">Tự đánh giá, không phải thang chẩn đoán.</p>

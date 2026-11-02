@@ -3,6 +3,7 @@
    Đọc index.html / script.js / styles.css, liệt kê chuỗi hiển thị và đối chiếu
    style guide mục 2 (giọng "chị", không "bạn", không "hệ thống", không "Vui lòng", không alert),
    mục 3 (prefers-reduced-motion, ảnh lỗi thay emoji), mục 5b (dòng "không phải chẩn đoán").
+   02/11/2026: 10 chấm bấm thay thanh trượt (không mức mặc định), 9 thẻ chỉ hình (3 thẻ mới chờ ảnh).
    01/11/2026: ô SĐT đổi thành Mã số bệnh nhân (chỉ chữ số, 3–20 số), bỏ câu giải thích dưới ô (anh Thông yêu cầu).
    Bản 28/10/2026: app đã sửa theo docs/qa/checkin-me-bau-tong-hop.md. Mục nào cố ý giữ nguyên vì
    CHỜ anh Thông quyết (mục 4 bản gộp) in dòng "CHỜ ANH", không tính là FAIL nhưng luôn hiện ra.
@@ -92,12 +93,23 @@ INFO('Emoji trong câu văn (guide: emoji chỉ ở nút/tiêu đề)', h.join('
 const levels = {};
 for (const m of js.matchAll(/^\s*(\d+):\s*\{\s*text:\s*"([^"]*)"/mg)) levels[m[1]] = m[2];
 INFO('Bảng 10 mức (script.js)', Object.entries(levels).map(([k, v]) => k + '=' + v).join(', '));
-const sliderLabels = [...htmlNoComment.matchAll(/<span>(\d+) \(([^)]*)\)<\/span>/g)].map(m => [m[1], m[2]]);
-T('Nhãn hai đầu thanh trượt khớp mức 1 và 10 của bảng', sliderLabels.length === 2 && sliderLabels[0][1] === levels['1'] && sliderLabels[1][1] === levels['10'], JSON.stringify(sliderLabels));
-const defaultStatus = (htmlNoComment.match(/id="current-status"[^>]*>([^<]*)</) || [])[1];
-const defaultVal = (htmlNoComment.match(/id="emotion-range"/) && htmlNoComment.match(/value="(\d+)" id="emotion-range"/) || [])[1];
-T('Chữ trạng thái mặc định khớp value mặc định của thanh trượt', defaultVal === '5' && defaultStatus === '5 - ' + levels['5'], defaultVal + ' / ' + defaultStatus + ' / ' + (js.match(/part1_text: '([^']*)'/) || [])[1]);
-T('currentCheckin.part1_text mặc định khớp bảng mức 5', (js.match(/part1_text: '([^']*)'/) || [])[1] === levels['5']);
+const legend = [...htmlNoComment.matchAll(/<span>(\d+) \(([^)]*)\)<\/span>/g)].map(m => [m[1], m[2]]);
+T('Chú thích hai đầu dãy chấm khớp mức 1 và 10 của bảng', legend.length === 2 && legend[0][1] === levels['1'] && legend[1][1] === levels['10'], JSON.stringify(legend));
+/* 10 chấm bấm (02/11/2026) */
+const dots = [...htmlNoComment.matchAll(/<button ([^>]*class="level-dot"[^>]*)>(\d+)<\/button>/g)].map(m => ({ a: m[1], txt: m[2], n: (m[1].match(/data-level="(\d+)"/) || [])[1], label: (m[1].match(/aria-label="([^"]*)"/) || [])[1] }));
+T('Mức: không còn thanh trượt (input range)', !/type="range"|emotion-range|styled-range/.test(htmlNoComment + cssCode + jsCode), findLines(htmlNoComment + cssCode + jsCode, /type="range"|emotion-range|styled-range/).join(' | '));
+T('Mức: 10 chấm 1–10 là <button type="button" role="radio" aria-checked="false" data-act="level">, chữ = số mức', dots.length === 10 && dots.every((d, i) => d.n === String(i + 1) && d.txt === d.n && /type="button"/.test(d.a) && /role="radio"/.test(d.a) && /aria-checked="false"/.test(d.a) && /data-act="level"/.test(d.a)), JSON.stringify(dots.map(d => d.n)));
+T('Mức: nhãn đọc được "Mức 7, Tốt" khớp bảng 10 mức', dots.length === 10 && dots.every(d => d.label === 'Mức ' + d.n + ', ' + levels[d.n]), dots.map(d => d.label).join(' | '));
+T('Mức: nhóm role="radiogroup" gắn tiêu đề Phần 1, mô tả bằng câu nhắc #level-error', /id="level-dots" class="level-dots" role="radiogroup" aria-labelledby="part1-title" aria-describedby="level-error"/.test(htmlNoComment));
+T('Mức: roving tabindex – lúc mở chỉ chấm 1 nhận Tab (tabindex 0), 9 chấm còn lại -1', dots.length === 10 && dots.filter(d => /tabindex="0"/.test(d.a)).map(d => d.n).join() === '1' && dots.filter(d => /tabindex="-1"/.test(d.a)).length === 9);
+T('Mức: KHÔNG có giá trị mặc định – part1_score 0, part1_text rỗng, chữ trạng thái trống, không chấm nào aria-checked="true"', /part1_score: 0,/.test(js) && /part1_text: '',/.test(js) && /<div id="current-status" class="emotion-status"><\/div>/.test(htmlNoComment) && !/aria-checked="true"/.test(htmlNoComment) && !/<img id="current-capy"[^>]*src=/.test(htmlNoComment));
+T('Mức: phím mũi tên/Home/End/Space đổi lựa chọn (keydown trên nhóm, preventDefault)', /addEventListener\('keydown', onLevelKey\)/.test(jsCode) && /ArrowRight/.test(jsCode) && /ArrowLeft/.test(jsCode) && /ArrowUp/.test(jsCode) && /ArrowDown/.test(jsCode) && /e\.preventDefault\(\)/.test(jsCode));
+const dotCss = Object.fromEntries([...css.matchAll(/\.level-dot\[data-level="(\d+)"\]\s*\{\s*background:\s*(#[0-9a-f]{6});/gi)].map(m => [m[1], m[2].toLowerCase()]));
+const dotMism = Object.entries(levels).filter(([k]) => { const c = ((js.match(new RegExp('^\\s*' + k + ':\\s*\\{[^}]*color:\\s*"(#[0-9a-f]{6})"', 'im')) || [])[1] || '').toLowerCase(); return dotCss[k] !== c; });
+T('Mức: màu nền 10 chấm trong CSS trùng màu mức trong script.js', Object.keys(dotCss).length === 10 && dotMism.length === 0, dotMism.map(x => x[0]).join(','));
+const lvErr = (js.match(/const LEVEL_ERROR = "([^"]*)";/) || [])[1] || '';
+T('Mức: câu nhắc khi chưa chọn mức giọng "chị", kết "nhé", ngắn', /^Chị /.test(lvErr) && /nhé\.$/.test(lvErr) && lvErr.length <= 60, lvErr);
+WAIT('Mức: chữ mới (hint Phần 1, câu nhắc chưa chọn mức, hint "all"/"level", dòng "Chị chọn: …") đã qua giọng anh', false, 'đội viết 02/11/2026, chờ anh duyệt', [lvErr, (htmlNoComment.match(/<p class="section-hint">(Chạm vào một chấm[^<]*)<\/p>/) || [])[1]].join(' | '));
 const heavy = Object.entries(levels).filter(([k, v]) => /tuyệt vọng|tồi tệ|kém/i.test(v));
 WAIT('Nhãn mức 1–4 không nặng nề/chấm điểm ("Tuyệt vọng", "Tồi tệ", "Kém")', heavy.length === 0, 'mục 4.4: giữ nguyên chữ, chờ anh chọn phương án QA hay UX', heavy.map(x => x.join('=')).join(', '));
 const levelColors = [...js.matchAll(/^\s*(\d+):\s*\{[^}]*color:\s*"(#[0-9a-f]{6})"/gim)].map(m => [m[1], m[2]]);
@@ -108,6 +120,9 @@ const lum = h => { const c = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) 
 const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
 const lowC = levelColors.map(([k, c]) => [k, c, Math.min(ratio(c, '#ffffff'), ratio(c, '#fff5f8'))]).filter(x => x[2] < 4.5);
 T('Tương phản: 10 màu chữ mức đều ≥ 4,5:1 trên nền trắng và #fff5f8', levelColors.length === 10 && lowC.length === 0, lowC.map(x => x[0] + '=' + x[1] + ' ' + x[2].toFixed(2)).join(', '));
+const dotText = (css.match(/\.level-dot\s*\{[^}]*?\bcolor:\s*(#[0-9a-f]{6})/i) || [])[1] || '';
+const lowDot = levelColors.filter(([, c]) => !dotText || ratio(dotText, c) < 4.5);
+T('Tương phản: chữ số trên 10 chấm (' + dotText + ') ≥ 4,5:1 trên nền màu mức', dotText && lowDot.length === 0, lowDot.map(x => x[0] + ' ' + ratio(dotText || '#000000', x[1]).toFixed(2)).join(', '));
 INFO('Tương phản 10 mức', levelColors.map(([k, c]) => k + ':' + ratio(c, '#ffffff').toFixed(1)).join(' '));
 const cssColor = (sel, prop) => { const m = css.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{[^}]*?' + prop + ':\\s*([^;]+);')); return m ? m[1].trim() : ''; };
 const statusCss = cssColor('.emotion-status', 'color');
@@ -116,19 +131,40 @@ const ph = (css.match(/::placeholder\s*\{[^}]*color:\s*(#[0-9a-f]{6})/i) || [])[
 T('Tương phản: placeholder ≥ 4,5:1 trên nền ô #fffafa', ph && ratio(ph, '#fffafa') >= 4.5, ph + ' ' + (ph ? ratio(ph, '#fffafa').toFixed(2) : ''));
 T('Tương phản: hint tiến độ dùng --ink-soft (không còn #9c7b88)', !/#9c7b88/i.test(cssCode + jsCode), findLines(cssCode + jsCode, /#9c7b88/i).join(' | '));
 
-/* ---- 6 thẻ cảm xúc ---- */
-const cards = [...htmlNoComment.matchAll(/<(\w+) ([^>]*class="capy-card"[^>]*)>[\s\S]*?<img src="([^"]*)" alt="([^"]*)"[\s\S]*?<span class="capy-name">([^<]*)<\/span>/g)]
-  .map(m => ({ tag: m[1], attrs: m[2], data: (m[2].match(/data-emotion="([^"]*)"/) || [])[1], img: m[3], alt: m[4], name: m[5] }));
-INFO('6 thẻ', cards.map(c => c.name + '→' + c.img).join(', '));
-T('Thẻ: data-emotion = tên hiển thị (6/6)', cards.length === 6 && cards.every(c => c.data === c.name), JSON.stringify(cards.map(c => c.data + '/' + c.name)));
-T('Bàn phím: 6 thẻ là <button type="button"> có aria-pressed, data-act="pick" (không div onclick)', cards.length === 6 && cards.every(c => c.tag === 'button' && /type="button"/.test(c.attrs) && /aria-pressed="false"/.test(c.attrs) && /data-act="pick"/.test(c.attrs)), JSON.stringify(cards.map(c => c.tag)));
-T('Thẻ: ảnh trang trí alt="" (tên đã có dưới ảnh, trình đọc không đọc lặp)', cards.every(c => c.alt === ''), cards.map(c => c.alt).join('|'));
+/* ---- 9 thẻ cảm xúc (02/11/2026: chỉ hình, chữ ở aria-label) ---- */
+const cardBlocks = [...htmlNoComment.matchAll(/<(\w+) ([^>]*class="capy-card"[^>]*)>([\s\S]*?)<\/button>/g)];
+const cards = cardBlocks.map(m => ({ tag: m[1], attrs: m[2], body: m[3], data: (m[2].match(/data-emotion="([^"]*)"/) || [])[1], label: (m[2].match(/aria-label="([^"]*)"/) || [])[1], img: (m[3].match(/<img src="([^"]*)"/) || [])[1] || '', alt: (m[3].match(/<img [^>]*alt="([^"]*)"/) || [])[1], pending: /pending-img/.test(m[3]), emoji: (m[3].match(/data-emoji="([^"]*)"/) || [])[1] }));
+INFO('9 thẻ', cards.map(c => c.data + '→' + (c.img || 'CHỜ ẢNH ' + c.emoji)).join(', '));
+const NINE = ['Vui vẻ', 'Đau khổ', 'Lo lắng', 'Tức giận', 'Hoảng hốt', 'Khó chịu', 'Mệt mỏi', 'Bình an', 'Cô đơn'];
+T('Thẻ: đúng 9 thẻ theo thứ tự anh duyệt, aria-label = data-emotion', cards.length === 9 && JSON.stringify(cards.map(c => c.data)) === JSON.stringify(NINE) && cards.every(c => c.label === c.data), JSON.stringify(cards.map(c => c.data + '/' + c.label)));
+T('Thẻ: chỉ hình – không còn chữ tên trên thẻ (.capy-name), không text node trong thẻ ngoài dấu ✓', !/capy-name/.test(htmlNoComment + cssCode + jsCode) && cards.every(c => c.body.replace(/<[^>]+>/g, '').replace(/[\s✓]/g, '') === ''), cards.filter(c => c.body.replace(/<[^>]+>/g, '').replace(/[\s✓]/g, '')).map(c => c.data).join(','));
+T('Bàn phím: 9 thẻ là <button type="button"> có aria-pressed, data-act="pick" (không div onclick)', cards.length === 9 && cards.every(c => c.tag === 'button' && /type="button"/.test(c.attrs) && /aria-pressed="false"/.test(c.attrs) && /data-act="pick"/.test(c.attrs)), JSON.stringify(cards.map(c => c.tag)));
+T('Thẻ: ảnh trang trí alt="" (tên đọc từ aria-label, không đọc lặp)', cards.filter(c => c.img).every(c => c.alt === ''), cards.map(c => c.alt).join('|'));
 T('Thẻ: lưới có role="group" gắn tiêu đề Phần 2', /class="emotion-grid" role="group" aria-labelledby="part2-title"/.test(htmlNoComment));
-const EMO_JS = ((js.match(/const EMOTIONS = \[([^\]]*)\]/) || [])[1] || '').split(',').map(x => x.trim().replace(/^'|'$/g, ''));
-T('Thẻ: 6 tên trùng danh sách EMOTIONS trong script.js', JSON.stringify(EMO_JS) === JSON.stringify(cards.map(c => c.name)), EMO_JS.join(','));
-const fileMap = { 'Vui vẻ': 'vui.jpg', 'Buồn': 'buon.jpg', 'Lo lắng': 'lo_lang.jpg', 'Tức giận': 'tuc.jpg', 'Hoảng hốt': 'hoang_hot.jpg', 'Khó chịu': 'kho_chiu.jpg' };
-const mism = cards.filter(c => fileMap[c.name] !== c.img).map(c => c.name + ' dùng ' + c.img);
-WAIT('Thẻ: tên file ảnh gợi đúng cảm xúc của thẻ', mism.length === 0, 'mục 4.8: anh xem ảnh khoc.jpg có hợp thẻ "Lo lắng" không (không tải, không đổi ảnh)', mism.join(', '));
+T('Thẻ: lưới 3 cột cả trên điện thoại (3×3)', /\.emotion-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3,/.test(cssCode) && !/@media \(max-width: 440px\)\s*\{\s*\.emotion-grid\s*\{[^}]*grid-template-columns/.test(cssCode));
+T('Thẻ: chọn thẻ thì hiện dòng chữ nhỏ dưới lưới "Chị chọn: <cảm xúc>" (textContent)', /<p id="emotion-picked" class="emotion-picked"><\/p>/.test(htmlNoComment) && /const PICKED_PREFIX = "Chị chọn: ";/.test(js) && /el\.textContent = currentCheckin\.part2_capybara \? PICKED_PREFIX \+ currentCheckin\.part2_capybara/.test(js));
+const EMO_JS = [...((js.match(/const EMOTIONS = \[([^\]]*)\]/) || [])[1] || '').matchAll(/'([^']*)'/g)].map(m => m[1]);
+T('Thẻ: 9 tên trùng danh sách EMOTIONS trong script.js', JSON.stringify(EMO_JS) === JSON.stringify(cards.map(c => c.data)), EMO_JS.join(' | '));
+/* 02/11/2026: bộ 9 ảnh mới của anh (PNG 480×480 nền trong suốt, tên file không dấu) cho CẢ 9 thẻ */
+const IMG = { 'Vui vẻ': 'vui_ve.png', 'Đau khổ': 'dau_kho.png', 'Lo lắng': 'lo_lang.png', 'Tức giận': 'tuc_gian.png', 'Hoảng hốt': 'hoang_hot.png', 'Khó chịu': 'kho_chiu.png', 'Mệt mỏi': 'met_moi.png', 'Bình an': 'binh_an.png', 'Cô đơn': 'co_don.png' };
+const imgMism = cards.filter(c => IMG[c.data] !== c.img).map(c => c.data + ' dùng "' + c.img + '"');
+T('Thẻ: cả 9 thẻ dùng ảnh mới đúng tên (vui_ve.png … co_don.png), không còn emoji giữ chỗ / ảnh .jpg cũ', cards.length === 9 && imgMism.length === 0 && !cards.some(c => c.pending) && !/pending-img|CHỜ ẢNH|\.jpg"/.test(htmlNoComment.replace(/capy-level-\d\d\.png/g, '')), imgMism.join(', '));
+const sizes = Object.values(IMG).map(f => [f, fs.existsSync(path.join(APP, f)) ? fs.statSync(path.join(APP, f)).size : -1]);
+INFO('Dung lượng 9 ảnh thẻ', sizes.map(([f, n]) => f + ' ' + (n / 1024).toFixed(1) + ' KB').join(', '));
+T('Ảnh thẻ: đủ 9 file trong thư mục app, mỗi file ≤ 150 KB', sizes.every(([, n]) => n > 0 && n <= 150 * 1024), sizes.filter(([, n]) => n <= 0 || n > 150 * 1024).map(x => x.join(' ')).join(', '));
+const pngDim = f => { const b = fs.readFileSync(path.join(APP, f)); return b.slice(1, 4).toString() === 'PNG' ? [b.readUInt32BE(16), b.readUInt32BE(20), b[25]] : null; };
+const dims = Object.values(IMG).map(f => [f, fs.existsSync(path.join(APP, f)) ? pngDim(f) : null]);
+T('Ảnh thẻ: PNG vuông 480×480, có kênh trong suốt (bảng màu có tRNS hoặc RGBA)', dims.every(([f, d]) => d && d[0] === 480 && d[1] === 480 && (d[2] === 6 || (d[2] === 3 && fs.readFileSync(path.join(APP, f)).includes('tRNS')))), JSON.stringify(dims));
+T('Ảnh thẻ: <img> có width/height 480 (không nhảy bố cục khi ảnh tải), alt="" (tên đọc từ aria-label)', cards.every(c => /width="480" height="480"/.test(c.body) && c.alt === ''));
+
+/* ---- Đợt sửa 2 (02/11/2026) ---- */
+T('Xáo 9 thẻ mỗi lượt mới: Fisher–Yates + crypto.getRandomValues (dự phòng Math.random), gọi lúc mở trang và lúc làm lại', /function shuffleCards\(\)/.test(jsCode) && /for \(let i = cards\.length - 1; i > 0; i--\)/.test(jsCode) && /crypto\.getRandomValues\(buf\)/.test(jsCode) && /Math\.random\(\)/.test(jsCode) && (jsCode.match(/shuffleCards\(\);/g) || []).length === 2);
+T('Xáo thẻ: dời chính các nút trong DOM (appendChild) – thứ tự Tab = thứ tự nhìn; không dùng CSS order', /cards\.forEach\(card => grid\.appendChild\(card\)\)/.test(jsCode) && !/\border\s*:/.test(cssCode) && !/style\.order/.test(jsCode));
+T('Xáo thẻ: KHÔNG lưu thứ tự vào máy, KHÔNG xáo 10 chấm', !/setItem\([^)]*(order|thuTu|shuffle)/i.test(jsCode) && !/querySelectorAll\('\.level-dot'\)[\s\S]{0,80}appendChild/.test(jsCode));
+T('Máy chủ trả emotion_invalid (Apps Script còn bản cũ) → GIỮ lượt trong hàng chờ (ném lỗi để gửi lại)', /if \(data && data\.error === 'emotion_invalid'\) throw new Error/.test(jsCode));
+T('B-03: mã sai + chưa chọn mức → nhắc cả câu cạnh 10 chấm, focus vẫn ô mã số', /toast\(ID_ERROR\);\s*\/\/[^\n]*\n\s*if \(!emotionLevels\[currentCheckin\.part1_score\]\) showLevelError\(true\);\s*if \(idInput\) idInput\.focus\(\);/.test(js));
+T('G-01: hai số bước của Phần 1, Phần 2 có aria-hidden (tên nhóm không đọc thành "1 Hôm nay…")', /<span class="step-num" aria-hidden="true">1<\/span>/.test(htmlNoComment) && /<span class="step-num" aria-hidden="true">2<\/span>/.test(htmlNoComment) && !/<span class="step-num">\d/.test(htmlNoComment));
+T('G-05: nút Hoàn thành sẵn sàng có cursor: pointer', /\.btn-submit\.ready\s*\{[^}]*cursor:\s*pointer/.test(cssCode));
 
 /* ---- Hint tiến độ ---- */
 const hintHtml = (htmlNoComment.match(/id="submit-hint"[^>]*>\s*([^<]*?)\s*<\/p>/) || [])[1];
@@ -136,8 +172,9 @@ const hintBlock = (js.match(/const HINTS = \{([\s\S]*?)\};/) || [])[1] || '';
 const hints = Object.fromEntries([...hintBlock.matchAll(/(\w+):\s*"([^"]*)"/g)].map(m => [m[1], m[2]]));
 const hintsJs = Object.values(hints);
 INFO('Hint các trạng thái (script.js HINTS)', hintsJs.join(' || '));
-T('Hint ban đầu trong HTML trùng hint "thiếu cả hai" của JS', hintHtml === hints.both, hintHtml + ' <> ' + hints.both);
-T('5 hint (cả hai, thiếu mã số, mã số sai, thiếu thẻ, đủ) phân biệt nhau', hintsJs.length === 5 && new Set(hintsJs).size === 5, hintsJs.length);
+T('Hint ban đầu trong HTML trùng hint "chưa có gì" (all) của JS', hintHtml === hints.all, hintHtml + ' <> ' + hints.all);
+T('6 hint (chưa có gì, thiếu mã số, mã số sai, thiếu mức, thiếu thẻ, đủ) phân biệt nhau', hintsJs.length === 6 && new Set(hintsJs).size === 6 && ['all', 'id', 'idBad', 'level', 'card', 'done'].every(k => k in hints), Object.keys(hints).join(','));
+T('Nút Hoàn thành: chưa đủ thì aria-disabled (vẫn chạm được để được nhắc), không dùng disabled lúc mở trang', /id="btn-submit"[^>]*aria-disabled="true"/.test(htmlNoComment) && !/id="btn-submit"[^>]*\sdisabled[\s>]/.test(htmlNoComment) && /setAttribute\('aria-disabled', ready \? 'false' : 'true'\)/.test(jsCode) && !/\.btn-submit\s*\{[^}]*pointer-events:\s*none/.test(cssCode));
 T('Hint đều có xưng "chị"', hintsJs.every(s => /chị/i.test(s)), hintsJs.filter(s => !/chị/i.test(s)).join(' | '));
 T('Hint đặt bằng textContent, trạng thái "đủ" bằng class (không inline style)', /hintEl\.textContent = HINTS\./.test(js) && !/hintEl\.(innerHTML|style)/.test(js));
 
@@ -170,8 +207,8 @@ T('Hỗ trợ: số cơ sở để trống trong config (không bịa), có 115'
 T('Mục 3: favicon (không 404 favicon.ico)', /<link rel="icon" href="data:image\/svg\+xml/.test(html));
 T('Mục 3: nhạc không tự phát, không tải trước (preload="none", không phát ở lần chạm đầu)', /<audio id="bg-music" loop preload="none">/.test(html) && !/once:\s*true/.test(js) && !/startBgMusic/.test(js) && !/autoplay/.test(html));
 T('Nút nhạc: nhãn cố định "Nhạc nền", chỉ đổi aria-pressed (không đổi aria-label)', /id="music-toggle-btn"[^>]*aria-pressed="false"[^>]*aria-label="Nhạc nền"/.test(html) && /setAttribute\('aria-pressed'/.test(jsCode) && !/setAttribute\('aria-label'/.test(jsCode));
-T('Chữ mức không aria-live (thanh trượt đã có aria-valuetext)', !/id="current-status"[^>]*aria-live/.test(html));
-T('Thanh trượt: aria-labelledby + aria-valuetext cập nhật theo mức', /id="emotion-range"[\s\S]{0,120}aria-labelledby="part1-title"/.test(html) && /setAttribute\('aria-valuetext'/.test(js));
+T('Chữ mức không aria-live (chấm đang chọn đã có nhãn "Mức 7, Tốt")', !/id="current-status"[^>]*aria-live/.test(html));
+T('Chấm: aria-checked cập nhật theo mức, câu nhắc #level-error có aria-live', /setAttribute\('aria-checked'/.test(jsCode) && /<p id="level-error" class="level-error" aria-live="polite"><\/p>/.test(htmlNoComment));
 T('Mục 3: có :focus-visible trong CSS', /:focus-visible/.test(css));
 T('Mục 3: viewport cho phép phóng to (không user-scalable=no)', !/user-scalable=no|maximum-scale=1/.test(htmlNoComment), (html.match(/name="viewport" content="([^"]*)"/) || [])[1]);
 T('Mục 2: placeholder là ví dụ cụ thể (có chữ số)', /placeholder="[^"]*\d/.test(html), (html.match(/placeholder="([^"]*)"/) || [])[1]);
