@@ -105,9 +105,24 @@ function load(opts) {
   const src = o.src || SRC;
   const sheets = {};
   let active = null;
+  /* Locale của file: 'en' (mặc định, =SUM(1,2) ra 3) | 'vi' (=SUM(1,2) hiểu "1,2" là số 1,2 → ra 1,2).
+     probeFail: không tạo được tab tạm để thử → script đoán theo getSpreadsheetLocale(). */
+  const loc = { locale: o.locale || 'en', probes: [], deleted: [] };
   const ss = {
     getSheetByName: n => sheets[n] || null,
-    insertSheet: n => (sheets[n] = makeSheet(n)),
+    insertSheet: n => {
+      if (/^__thu_cu_phap_/.test(n)) {
+        loc.probes.push(n);
+        if (o.probeFail) throw new Error('Không tạo được tab');
+        const sh = makeSheet(n);
+        const gr = sh.getRange;
+        sh.getRange = (...a) => { const r = gr(...a); const sf = r.setFormula; r.setFormula = f => { sf.call(r, f); r._f = f; return r; }; r.getValue = () => (sh.formulas.A1 === '=SUM(1,2)' ? (loc.locale === 'vi' ? 1.2 : 3) : ''); return r; };
+        return (sheets[n] = sh);
+      }
+      return (sheets[n] = makeSheet(n));
+    },
+    deleteSheet: sh => { loc.deleted.push(sh.name); delete sheets[sh.name]; },
+    getSpreadsheetLocale: () => (loc.locale === 'vi' ? 'vi_VN' : 'en_US'),
     getActiveSheet: () => active
   };
   const ui = { menus: [], alerts: [], noUi: !!o.noUi };
@@ -115,6 +130,7 @@ function load(opts) {
   const sandbox = {
     SpreadsheetApp: {
       getActiveSpreadsheet: () => ss,
+      flush: () => {},
       newConditionalFormatRule: () => newRule(!!o.localizeCF),
       ProtectionType: { SHEET: 'SHEET', RANGE: 'RANGE' },
       BorderStyle: { SOLID_MEDIUM: 'SOLID_MEDIUM' },
@@ -139,7 +155,7 @@ function load(opts) {
   if (o.setup) o.setup(sheets, s => { active = s; });
   const P = body => JSON.parse(sandbox.doPost({ postData: { contents: typeof body === 'string' ? body : JSON.stringify(body) } }).getContent());
   const G = p => sandbox.doGet({ parameter: p || {} });
-  return { sandbox, sheets, lock, ui, P, G, setActive: s => { active = s; } };
+  return { sandbox, sheets, lock, ui, loc, P, G, setActive: s => { active = s; } };
 }
 
 const sid = n => 'sess-0000-' + String(n).padStart(4, '0');
@@ -535,6 +551,78 @@ const noFormula = sh => sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(
   const r4 = env2.P(Object.assign({}, OK, { sessionId: sid(700) }));
   T('Tab 1000 hàng đã đầy: lượt mới ghi vào hàng 1001, tab thành 1500 hàng', before === 1000 && r4.result === 'success' && t2.rows.length === 1001 && t2.maxRows === 1500, JSON.stringify(r4) + ' rows=' + t2.rows.length + ' max=' + t2.maxRows);
 }
+
+/* ===== Cú pháp công thức theo locale của file (02/11/2026: file vi_VN báo #ERROR! với công thức dấu phẩy) ===== */
+{
+  const env = load();
+  const fx = env.sandbox.fx_;
+  /* Bỏ phần trong "chuỗi" và 'tên tab' để đếm dấu ngăn bên ngoài */
+  const outside = f => String(f).replace(/"(?:[^"]|"")*"|'(?:[^']|'')*'/g, '');
+  const cases = [
+    ['=SUM(1,2)', '=SUM(1;2)'],
+    ['={a,b;c,d}', '={a\\b;c\\d}'],
+    ['=IF(A1="x, ""y"", z",1,2)', '=IF(A1="x, ""y"", z";1;2)'],
+    ['={IF(A1,1,2),SUM(3,4);5,6}', '={IF(A1;1;2)\\SUM(3;4);5\\6}'],
+    ['=FILTER({a,b},INDEX(x,0,1)>0)', '=FILTER({a\\b};INDEX(x;0;1)>0)'],
+    ["='Tab, 1'!A1+SUM(1,2)", "='Tab, 1'!A1+SUM(1;2)"],
+    ['=ROUND(1.5,0)&"1.5"', '=ROUND(1,5;0)&"1.5"'],
+    ['=QUERY(A:B,"select Col1, count(Col1) label count(Col1) \'\'",0)', '=QUERY(A:B;"select Col1, count(Col1) label count(Col1) \'\'";0)'],
+    ['=T.DIST(A1,2,TRUE)', '=T.DIST(A1;2;TRUE)']
+  ];
+  const bad = cases.filter(([a, w]) => fx(a, ';') !== w).map(([a, w]) => a + ' → ' + fx(a, ';') + ' (cần ' + w + ')');
+  T('fx_ (;): "," tham số → ";", "," trong {…} → "\\", ";" ngăn hàng giữ, chuỗi "…" (cả "" thoát) và \'tên tab\' giữ nguyên, số thập phân 1.5 → 1,5', bad.length === 0, bad.join(' | '));
+  T('fx_ (,): công thức giữ nguyên từng ký tự', cases.every(([a]) => fx(a, ',') === a));
+  const sumVi = fx(env.sandbox.summaryFormula_(), ';'), lookVi = fx(env.sandbox.lookupFormula_(), ';');
+  T('fx_ Tổng hợp/Tra cứu (;): không còn "," ngoài chuỗi; QUERY "select Col1, count(Col1), sum(Col2)…" và regex "^\\d{3,20}$" giữ dấu phẩy',
+    !/,/.test(outside(sumVi)) && !/,/.test(outside(lookVi)) && sumVi.includes('"select Col1, count(Col1), sum(Col2) group by Col1') && lookVi.includes('"^\\d{3,20}$"') && sumVi.includes('{maSo\\thoiGian\\mucTxt\\camXuc\\tg}') && lookVi.includes('{thoiGian\\mucTxt\\camXuc\\canhBao}'), outside(sumVi).slice(0, 160));
+  const count = (f, re) => (outside(f).match(re) || []).length;
+  T('fx_: số ngoặc ( ) { } không đổi (chỉ đổi dấu ngăn)', [env.sandbox.summaryFormula_(), env.sandbox.lookupFormula_()].every(f => { const v = fx(f, ';'); return ['(', ')', '{', '}'].every(c => count(f, new RegExp('\\' + c, 'g')) === count(v, new RegExp('\\' + c, 'g'))); }));
+  T('normFormula_ coi ",", ";", "\\" như nhau (nhận được quy tắc màu bản cũ lẫn bản mới)', env.sandbox.normFormula_('=AND(a ; b\\c)') === env.sandbox.normFormula_('=AND(a,b,c)'));
+}
+
+/* Locale vi_VN: menu thử ra ";" → mọi công thức ghi ra (ô A2, A6, 3 quy tắc màu × 3 tab) dùng ";"; tab tạm bị xóa */
+{
+  const env = load({ locale: 'vi' });
+  const outside = f => String(f).replace(/"(?:[^"]|"")*"|'(?:[^']|'')*'/g, '');
+  const ck = env.sheets.CheckIn = makeSheet('CheckIn');
+  ck.rows.push(NEW_HEADER.split('|'));
+  const res = env.sandbox.caiDatBangBacSi();
+  const th = env.sheets['Tổng hợp'], tc = env.sheets['Tra cứu'];
+  T('vi_VN: thử cú pháp bằng 1 tab tạm, ra ";", tab tạm đã xóa', res.sep === ';' && env.loc.probes.length === 1 && env.loc.deleted.length === 1 && !Object.keys(env.sheets).some(n => /^__thu_cu_phap_/.test(n)), JSON.stringify({ sep: res.sep, probes: env.loc.probes, sheets: Object.keys(env.sheets) }));
+  T('vi_VN: Tổng hợp!A2 và Tra cứu!A6 = fx_(…, ";"), không còn "," ngoài chuỗi', th.formulas.A2 === env.sandbox.fx_(env.sandbox.summaryFormula_(), ';') && tc.formulas.A6 === env.sandbox.fx_(env.sandbox.lookupFormula_(), ';') && !/,/.test(outside(th.formulas.A2)) && !/,/.test(outside(tc.formulas.A6)) && /^=LET\(thoiGian;'CheckIn'!A2:A;/.test(th.formulas.A2), th.formulas.A2.slice(0, 80));
+  const all = ck.cfRules.concat(th.cfRules, tc.cfRules);
+  T('vi_VN: 9 quy tắc màu (3 × 3 tab) dùng ";" – ví dụ =AND(IFERROR(VALUE(LEFT($C2&" ";FIND(" ";$C2&" ")-1));0)>=1;…)', all.length === 9 && all.every(r => !/,/.test(outside(r.formula)) && /;/.test(r.formula)) && ck.cfRules[0].formula === '=AND(IFERROR(VALUE(LEFT($C2&" ";FIND(" ";$C2&" ")-1));0)>=1;IFERROR(VALUE(LEFT($C2&" ";FIND(" ";$C2&" ")-1));0)<=3)', ck.cfRules[0] && ck.cfRules[0].formula);
+  T('vi_VN: hộp "Đã cài xong" nói rõ dùng dấu chấm phẩy', /dấu chấm phẩy ";"/.test(env.ui.alerts[0] || ''), env.ui.alerts[0]);
+}
+{
+  const env = load();
+  const res = env.sandbox.caiDatBangBacSi();
+  T('en_US: thử ra ",", công thức giữ nguyên dấu phẩy (A2 = summaryFormula_ gốc), tab tạm đã xóa', res.sep === ',' && env.sheets['Tổng hợp'].formulas.A2 === env.sandbox.summaryFormula_() && env.loc.deleted.length === 1 && /dấu phẩy ","/.test(env.ui.alerts[0] || ''), res.sep);
+}
+{
+  const vi = load({ locale: 'vi', probeFail: true }).sandbox.caiDatBangBacSi();
+  const en = load({ probeFail: true }).sandbox.caiDatBangBacSi();
+  T('Không tạo được tab tạm: đoán theo locale (vi_VN → ";", en_US → ","), menu vẫn chạy xong', vi.sep === ';' && en.sep === ',' && vi.summary && en.summary, vi.sep + ' / ' + en.sep);
+}
+/* File đã chạy menu bản dấu phẩy (đang #ERROR! ở vi_VN): dán bản mới, chạy lại → thay A2/A6 và 3 quy tắc cũ, không nhân đôi */
+{
+  const env = load();                 // lần 1: bản cũ ghi kiểu dấu phẩy
+  const ck = env.sheets.CheckIn = makeSheet('CheckIn');
+  ck.rows.push(NEW_HEADER.split('|'), ['08:00:00 02/11/2026', '0012345', '2 - Rất tồi tệ', 'Cô đơn', sid(800)]);
+  const foreign = { formula: '=$D2="Vui vẻ"', bg: '#000000', ranges: ['D2:D9'], getBooleanCondition: () => ({ getCriteriaValues: () => ['=$D2="Vui vẻ"'] }) };
+  ck.cfRules.push(foreign);
+  env.sandbox.caiDatBangBacSi();
+  const oldA2 = env.sheets['Tổng hợp'].formulas.A2;
+  T('(chuẩn bị) lần chạy cũ: quy tắc và A2 kiểu dấu phẩy', /,/.test(ck.cfRules[1].formula) && /^=LET\(thoiGian,/.test(oldA2));
+  env.loc.locale = 'vi';              // thực tế file là vi_VN
+  const res = env.sandbox.caiDatBangBacSi();
+  const outside = f => String(f).replace(/"(?:[^"]|"")*"|'(?:[^']|'')*'/g, '');
+  T('Chạy lại ở vi_VN: CheckIn còn đúng 1 quy tắc của anh + 3 quy tắc mới dấu ";" (3 quy tắc dấu phẩy cũ đã bỏ, không thành 6)', res.sep === ';' && ck.cfRules.length === 4 && ck.cfRules[0] === foreign && ck.cfRules.slice(1).every(r => !/,/.test(outside(r.formula))), ck.cfRules.map(r => r.formula.slice(0, 40)).join(' | '));
+  T('Chạy lại ở vi_VN: Tổng hợp!A2 và Tra cứu!A6 được ghi lại bản ";" (thay bản dấu phẩy đang #ERROR!), mỗi tab 3 quy tắc', !/,/.test(outside(env.sheets['Tổng hợp'].formulas.A2)) && !/,/.test(outside(env.sheets['Tra cứu'].formulas.A6)) && env.sheets['Tổng hợp'].cfRules.length === 3 && env.sheets['Tra cứu'].cfRules.length === 3);
+  T('Chạy lại: dữ liệu CheckIn nguyên vẹn', ck.rows.length === 2 && ck.rows[1][3] === 'Cô đơn');
+}
+T('Nguồn: hướng dẫn ghi rõ file tiếng Việt dùng dấu chấm phẩy ";", chạy lại menu để sửa ô #ERROR!', /file tiếng Việt dùng dấu chấm phẩy ";"/.test(SRC) && /#ERROR!/.test(SRC));
+T('Nguồn: mọi setFormula và quy tắc màu đi qua fx_(…, FORMULA_SEP)', (SRC.match(/\.setFormula\(/g) || []).length === 3 && (SRC.match(/\.setFormula\(fx_\(/g) || []).length === 2 && /setFormula\('=SUM\(1,2\)'\)/.test(SRC) && /alertFormulas_\(levelCell\)\.map\(function \(x\) \{ return fx_\(x, FORMULA_SEP\); \}\)/.test(SRC));
 
 /* ===== Nhãn khớp với script.js ===== */
 {

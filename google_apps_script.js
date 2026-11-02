@@ -84,6 +84,10 @@
  *        - tab "Tra cứu": gõ một mã số đang có vào ô B2, Enter → hiện các lượt của mã đó.
  *        Menu nới tab CheckIn và Tổng hợp lên 20 000 hàng để vùng tô màu phủ đủ. Khi tab CheckIn
  *        vượt 20 000 lượt (script tự thêm hàng), chạy lại menu để các dòng mới cũng có màu.
+ *        Công thức tự ghi theo ngôn ngữ của file: file tiếng Việt dùng dấu chấm phẩy ";" (ví dụ
+ *        =LET(x;1;y;2;x+y)), file tiếng Anh dùng dấu phẩy. Menu tự thử bằng một tab tạm (tạo rồi xóa ngay).
+ *        Nếu ô Tổng hợp!A2 hay Tra cứu!A6 hiện #ERROR! (bản 02/11 trước 21 giờ ghi dấu phẩy), dán bản
+ *        script này rồi chạy lại menu: menu ghi lại hai ô đó và thay 3 quy tắc màu cũ (không nhân đôi).
  *    4.4 Chạy lại menu lúc nào cũng được (ví dụ lỡ xóa tab Tổng hợp): menu dựng lại tab Tổng hợp,
  *        Tra cứu và quy tắc tô màu của nó; KHÔNG đụng dữ liệu ở tab CheckIn, không xóa quy tắc
  *        tô màu anh tự đặt. Nếu đã có tab tên "Tổng hợp" hay "Tra cứu" do anh tự tạo (không phải
@@ -445,10 +449,73 @@ function alertFormulas_(levelCell) {
   return ALERT_BANDS.map(function (b) { return '=AND(' + n + '>=' + b.from + ',' + n + '<=' + b.to + ')'; });
 }
 
-/** Ba quy tắc định dạng có điều kiện tô CẢ DÒNG trong vùng a1 theo ô mức. */
+/* ===== Cú pháp công thức theo ngôn ngữ (locale) của file Sheet =====
+ * Google Sheets nhận công thức (setFormula VÀ quy tắc tô màu) theo locale của file:
+ *   - file tiếng Anh (en_US…): ngăn tham số ",", trong mảng {…}: ngăn cột ",", ngăn hàng ";", số thập phân "."
+ *   - file tiếng Việt (vi_VN) và nhiều nước khác: ngăn tham số ";", trong {…}: ngăn cột "\\", ngăn hàng ";",
+ *     số thập phân ",". Ghi bản dấu phẩy vào file tiếng Việt thì ô báo #ERROR! (đã gặp 02/11/2026).
+ * Code viết công thức gốc kiểu tiếng Anh; fx_ đổi sang cú pháp của file trước khi ghi.
+ */
+var FORMULA_SEP = ',';   // menu đặt lại theo kết quả thử (detectFormulaSep_) mỗi lần chạy
+
+/**
+ * Đổi công thức kiểu tiếng Anh sang cú pháp có ngăn tham số sep (',' giữ nguyên; ';' đổi).
+ * Không đụng chữ bên trong "chuỗi" (kể cả "" thoát) và 'tên tab'. Bên ngoài chuỗi:
+ *   "," ở mức tham số (trong ngoặc tròn) → ";"   ·   "," ngay trong {…} → "\\"   ·   ";" giữ (ngăn hàng)
+ *   "." giữa hai chữ số (số thập phân) → ","
+ */
+function fx_(formula, sep) {
+  var f = String(formula);
+  if (sep !== ';') return f;
+  var out = '', stack = [], i = 0, ch, q;
+  while (i < f.length) {
+    ch = f.charAt(i);
+    if (ch === '"' || ch === "'") {          // chuỗi "…" hoặc 'tên tab': chép nguyên, "" / '' là ký tự thoát
+      q = ch; out += ch; i++;
+      while (i < f.length) {
+        out += f.charAt(i);
+        if (f.charAt(i) === q) {
+          if (f.charAt(i + 1) === q) { out += q; i += 2; continue; }
+          i++; break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (ch === '(' || ch === '{') stack.push(ch);
+    else if (ch === ')' || ch === '}') stack.pop();
+    if (ch === ',') out += (stack.length && stack[stack.length - 1] === '{') ? '\\' : ';';
+    else if (ch === '.' && /[0-9]/.test(f.charAt(i - 1)) && /[0-9]/.test(f.charAt(i + 1))) out += ',';
+    else out += ch;
+    i++;
+  }
+  return out;
+}
+
+/**
+ * Thử cú pháp của file: tab tạm, ghi =SUM(1,2). File dấu phẩy ra 3; file dấu chấm phẩy hiểu "1,2" là
+ * số 1,2 (hoặc báo lỗi) nên không ra 3. Luôn xóa tab tạm. Thử không được thì đoán theo locale.
+ */
+function detectFormulaSep_(ss) {
+  var tmp = null;
+  try {
+    tmp = ss.insertSheet('__thu_cu_phap_' + new Date().getTime());
+    tmp.getRange('A1').setFormula('=SUM(1,2)');
+    SpreadsheetApp.flush();
+    return tmp.getRange('A1').getValue() === 3 ? ',' : ';';
+  } catch (e) {
+    var loc = '';
+    try { loc = String(ss.getSpreadsheetLocale()); } catch (ignored) {}
+    return /^(en|zh|ja|ko|th|he|iw|hi|ms|fil|tl)(_|$)/i.test(loc) ? ',' : ';';
+  } finally {
+    if (tmp) { try { ss.deleteSheet(tmp); } catch (ignored2) {} }
+  }
+}
+
+/** Ba quy tắc định dạng có điều kiện tô CẢ DÒNG trong vùng a1 theo ô mức (công thức theo cú pháp của file). */
 function alertRules_(sheet, a1, levelCell) {
   var range = sheet.getRange(a1);
-  var f = alertFormulas_(levelCell);
+  var f = alertFormulas_(levelCell).map(function (x) { return fx_(x, FORMULA_SEP); });
   return ALERT_BANDS.map(function (b, i) {
     return SpreadsheetApp.newConditionalFormatRule()
       .whenFormulaSatisfied(f[i])
@@ -458,9 +525,12 @@ function alertRules_(sheet, a1, levelCell) {
   });
 }
 
-/** Chuẩn hóa công thức để so: bỏ khoảng trắng, đổi ";" (dấu phân cách theo ngôn ngữ Việt) thành ",", chữ hoa. */
+/**
+ * Chuẩn hóa công thức để so: bỏ khoảng trắng, đổi ";" và "\\" (cú pháp file tiếng Việt) thành ",", chữ hoa.
+ * Nhờ vậy nhận ra cả quy tắc màu bản dấu phẩy cũ lẫn bản dấu chấm phẩy mới.
+ */
 function normFormula_(f) {
-  return String(f == null ? '' : f).replace(/\s+/g, '').replace(/;/g, ',').toUpperCase();
+  return String(f == null ? '' : f).replace(/\s+/g, '').replace(/[;\\]/g, ',').toUpperCase();
 }
 
 /**
@@ -605,7 +675,7 @@ function lookupFormula_() {
 function buildSummary_(sh) {
   headerRow_(sh, 1, ['Mã số BN', 'Lượt gần nhất (giờ)', 'Mức gần nhất', 'Cảm xúc gần nhất', 'Số lượt', 'Số lượt ĐỎ trong 14 ngày']);
   sh.setFrozenRows(1);
-  sh.getRange('A2').setFormula(summaryFormula_());
+  sh.getRange('A2').setFormula(fx_(summaryFormula_(), FORMULA_SEP));
   [120, 160, 170, 170, 80, 190].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
   ensureRows_(sh, MIN_ROWS);   // mỗi mã số một dòng: đủ chỗ và đủ vùng tô màu cho tới 20 000 mã
   applyAlertColors_(sh, 'A2:F' + sh.getMaxRows(), '$C2');
@@ -622,7 +692,7 @@ function buildLookup_(sh) {
   sh.getRange('A3').setValue('Màu theo mức: ĐỎ 1–3 · VÀNG 4–5 · XANH 6–10. Tự đánh giá, không phải thang chẩn đoán.').setFontColor('#7a636c');
   headerRow_(sh, LOOKUP_FIRST_ROW - 1, ['Thời gian', 'Mức', 'Cảm xúc', 'Cảnh báo']);
   sh.setFrozenRows(LOOKUP_FIRST_ROW - 1);
-  sh.getRange('A' + LOOKUP_FIRST_ROW).setFormula(lookupFormula_());
+  sh.getRange('A' + LOOKUP_FIRST_ROW).setFormula(fx_(lookupFormula_(), FORMULA_SEP));
   [170, 190, 170, 90].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
   applyAlertColors_(sh, 'A' + LOOKUP_FIRST_ROW + ':D' + sh.getMaxRows(), '$B' + LOOKUP_FIRST_ROW);
 }
@@ -644,7 +714,13 @@ function caiDatBangBacSi() {
     var src = sheet_();
     ensureHeader_(src);
     var notes = [];
-    var res = { checkinRules: 0, summary: false, lookup: false, locks: [] };
+    var res = { checkinRules: 0, summary: false, lookup: false, locks: [], sep: '' };
+
+    // Cú pháp công thức theo ngôn ngữ của file (file tiếng Việt dùng ";"), thử trên tab tạm
+    FORMULA_SEP = detectFormulaSep_(ss);
+    res.sep = FORMULA_SEP;
+    var sepText = FORMULA_SEP === ';' ? 'dấu chấm phẩy ";" (file tiếng Việt)' : 'dấu phẩy "," (file tiếng Anh)';
+    Logger.log('caiDatBangBacSi: cú pháp công thức = ' + sepText);
 
     // a) Tab CheckIn: nới lên ≥ 20 000 hàng rồi tô cả dòng A–D theo mức ở cột C
     //    (vùng tô màu phủ tới hàng cuối lúc chạy menu; doPost thêm hàng khi hết)
@@ -671,6 +747,7 @@ function caiDatBangBacSi() {
          (res.summary ? ', tab "' + SUMMARY_SHEET + '"' : '') +
          (res.lookup ? ', tab "' + LOOKUP_SHEET + '" (gõ mã ở ô ' + LOOKUP_INPUT + ')' : '') +
          '. Đã khóa: ' + (res.locks.join(', ') || 'không tab nào') + '.' +
+         '\nCông thức ghi theo ' + sepText + '.' +
          (notes.length ? '\n\n' + notes.join('\n') : ''));
     return res;
   } finally {
