@@ -431,7 +431,7 @@ const noFormula = sh => sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(
 
   const res = sb.caiDatBangBacSi();
   T('Chạy menu: trả kết quả đủ 4 phần, khóa 4 tab', res.checkinRules === 3 && res.summary && res.lookup && res.guide && JSON.stringify(res.locks) === JSON.stringify(['CheckIn', 'Tổng hợp', 'Tra cứu', 'Hướng xử trí']), JSON.stringify(res));
-  T('Chạy menu: hộp thoại "Đã cài xong" cho anh, nhắc cột Gợi ý mở đầu và tab Hướng xử trí (bản nháp)', env.ui.alerts.length === 1 && /^Đã cài xong/.test(env.ui.alerts[0]) && /tab "Hướng xử trí" \(bản nháp dùng thử 03\/11\/2026/.test(env.ui.alerts[0]) && /Gợi ý mở đầu/.test(env.ui.alerts[0]) && /Đã khóa: CheckIn, Tổng hợp, Tra cứu, Hướng xử trí\./.test(env.ui.alerts[0]), env.ui.alerts.join(' | '));
+  T('Chạy menu: hộp thoại "Đã cài xong" cho anh, nhắc cột Gợi ý mở đầu và tab Hướng xử trí (bản nháp)', env.ui.alerts.length === 1 && /^Đã cài xong/.test(env.ui.alerts[0]) && /tab "Hướng xử trí" \(bản nháp dùng thử 0\.3 · 04\/11\/2026/.test(env.ui.alerts[0]) && /Gợi ý mở đầu/.test(env.ui.alerts[0]) && /Đã khóa: CheckIn, Tổng hợp, Tra cứu, Hướng xử trí\./.test(env.ui.alerts[0]), env.ui.alerts.join(' | '));
   T('Chạy menu: chờ khóa LockService và nhả khóa (không chen lúc doPost ghi)', env.lock.waits === 1 && env.lock.held === 0);
   T('Tab CheckIn: KHÔNG đổi dữ liệu, tiêu đề, số cột (không thêm cột F)', JSON.stringify(ck.rows) === dataBefore && ck.rows.every(r => r.length === 5), JSON.stringify(ck.rows[0]));
 
@@ -496,13 +496,13 @@ const noFormula = sh => sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(
   T('Hướng xử trí: tạo tab, dấu ẩn kind "huong_xu_tri", đứng NGAY SAU tab Tra cứu',
     !!hx && hx.meta.some(m => m.key === 'checkin_me_bau_tab' && m.value === 'huong_xu_tri') && Object.keys(env.sheets).indexOf('Hướng xử trí') === Object.keys(env.sheets).indexOf('Tra cứu') + 1, JSON.stringify(Object.keys(env.sheets)));
   T('Hướng xử trí: A1 tiêu đề đậm, A2 trạng thái BẢN NHÁP (chưa ban hành, chưa kiểm định, không thay EPDS)',
-    hxRow(1)[0] === 'HƯỚNG XỬ TRÍ PHIẾU CHECK-IN CẢM XÚC MẸ BẦU THEO 3 MÀU' && hxRow(2)[0] === 'Bản nháp dùng thử, cập nhật 03/11/2026 – chưa ban hành, chưa kiểm định. Phiếu là tự đánh giá, không phải công cụ chẩn đoán, không thay EPDS.' && hx.merges.some(m => m.a1 === 'A2:D2'), JSON.stringify(hxRow(2)));
+    hxRow(1)[0] === 'HƯỚNG XỬ TRÍ PHIẾU CHECK-IN CẢM XÚC MẸ BẦU THEO 3 MÀU' && hxRow(2)[0] === 'Bản nháp dùng thử 0.3, cập nhật 04/11/2026 – chưa ban hành, chưa kiểm định. Phiếu là tự đánh giá, không phải công cụ chẩn đoán, không thay EPDS.' && hx.merges.some(m => m.a1 === 'A2:D2'), JSON.stringify(hxRow(2)));
   T('Hướng xử trí: A3 cách dùng cho người chỉ xem (tab Tổng hợp, Ctrl+F, cột G); Tra cứu chỉ cho người có quyền sửa',
     /^Cách dùng: ngay trước khi gọi thai phụ vào, mở tab Tổng hợp, bấm Ctrl\+F gõ mã số BN; cột G là gợi ý mở đầu\. Người có quyền sửa có thể gõ mã ở tab Tra cứu/.test(hxRow(3)[0]) && hx.merges.some(m => m.a1 === 'A3:D3'), hxRow(3)[0]);
   T('Hướng xử trí: hàng 6 tiêu đề Màu · Khi nào · Bác sĩ tư vấn làm gì · Bước tiếp theo; đủ 4 hàng XANH / VÀNG / ĐỎ / BÁO ĐỘNG',
     JSON.stringify(hxRow(6)) === JSON.stringify(['Màu', 'Khi nào', 'Bác sĩ tư vấn làm gì', 'Bước tiếp theo']) &&
     hxRow(7)[0] === 'XANH – Ổn định' && hxRow(8)[0] === 'VÀNG – Hỏi trước khi tư vấn' && hxRow(9)[0] === 'ĐỎ – Đánh giá trong buổi' && hxRow(10)[0] === '⚠ BÁO ĐỘNG – Mọi màu' &&
-    [7, 8, 9, 10].every(n => hxRow(n).length === 4 && hxRow(n).every(c => String(c).length > 0)) && /\n/.test(hxRow(8)[2]) && hxRow(10)[3].includes('[cần xác nhận: số gọi]'), JSON.stringify([7, 8, 9, 10].map(n => hxRow(n)[0])));
+    [7, 8, 9, 10].every(n => hxRow(n).length === 4 && hxRow(n).every(c => String(c).length > 0)) && /\n/.test(hxRow(8)[2]) && hxRow(10)[3].includes('gọi BS Thông'), JSON.stringify([7, 8, 9, 10].map(n => hxRow(n)[0])));
   T('Hướng xử trí: nền hàng 7–9 đúng ALERT_COLORS (xanh/vàng/đỏ nhạt), hàng 10 nền #EA9999 chữ đậm',
     hx.fmt.includes('A7:D7:#D9EAD3') && hx.fmt.includes('A8:D8:#FFF2CC') && hx.fmt.includes('A9:D9:#F4CCCC') && hx.fmt.includes('A10:D10:#EA9999'), hx.fmt.filter(f => /^A\d+:D\d+:#/.test(f)).join(' '));
   T('Hướng xử trí: 9 thẻ chia 3 nhánh (hàng 12–17), đủ 9 nhãn EMOTION_LABELS, mỗi nhãn đúng một nhánh',

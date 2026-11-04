@@ -53,14 +53,14 @@ for (let n = 1; n <= 25; n++) {
 }
 T('Tab Hướng xử trí: 25 × 4 ô khớp spec NGUYÊN VĂN từng ký tự (kể cả xuống dòng ⏎, ngoặc kép, dấu …, ≥, ≤, –)', diffs.length === 0, diffs.slice(0, 3).join(' | '));
 T('Tab Hướng xử trí: hàng 5, 11, 18, 24 trống (khoảng cách giữa các khối)', [5, 11, 18, 24].every(n => G.GUIDE_ROWS[n - 1].every(c => c === '')));
-T('Tab Hướng xử trí: còn đủ 3 chỗ [cần xác nhận: …] (số gọi tầng 3, số trực, ai gọi lại) – chưa tự điền số',
-  G.GUIDE_ROWS.flat().join('\n').match(/\[cần xác nhận: [^\]]+\]/g).length === 3);
+T('Tab Hướng xử trí: 3 chỗ chờ đã điền theo anh Thông 04/11 (gọi BS Thông giờ hành chính + ngoài giờ, BS Thông gọi lại ca ĐỎ) – không còn [cần xác nhận]',
+  !/\[cần xác nhận/.test(G.GUIDE_ROWS.flat().join('\n')) && G.GUIDE_ROWS[9][3].includes('gọi BS Thông để chuyển tầng 3') && G.GUIDE_ROWS[9][3].includes('Ngoài giờ: gọi BS Thông') && G.GUIDE_ROWS[22][1].includes('BS Thông gọi lại'));
 T('Tab Hướng xử trí: không ô nào bắt đầu bằng = + - @ (Sheets hiểu nhầm thành công thức)', G.GUIDE_ROWS.flat().every(c => !/^[=+\-@]/.test(c)));
 T('Tab Hướng xử trí: độ rộng A 110 · B 170 · C 470 · D 260', JSON.stringify(G.GUIDE_WIDTHS) === '[110,170,470,260]');
 T('Tab Hướng xử trí: mỗi ô < 50 000 ký tự (dài nhất ' + Math.max(...G.GUIDE_ROWS.flat().map(c => c.length)) + ')', G.GUIDE_ROWS.flat().every(c => c.length < 50000));
 const README = fs.readFileSync(path.join(APP, 'README.md'), 'utf8');
 T('README: ghi tên menu mới, không còn tên cũ, có nhắc tab Hướng xử trí (bản nháp) và cột Gợi ý mở đầu (G / E)',
-  README.includes('"' + G.MENU_ITEM + '"') && !README.includes('Cài tô màu + Tổng hợp + Tra cứu') && /tab \*\*Hướng xử trí\*\*/.test(README) && /bản nháp dùng thử 03\/11\/2026/.test(README) && /Gợi ý mở đầu\*\* \(Tổng hợp cột G, Tra cứu cột E/.test(README));
+  README.includes('"' + G.MENU_ITEM + '"') && !README.includes('Cài tô màu + Tổng hợp + Tra cứu') && /tab \*\*Hướng xử trí\*\*/.test(README) && /bản nháp dùng thử 0\.3 · 04\/11\/2026/.test(README) && /Gợi ý mở đầu\*\* \(Tổng hợp cột G, Tra cứu cột E/.test(README));
 T('Tên menu đúng spec', G.MENU_ITEM === 'Cài bảng bác sĩ (màu, Tổng hợp, Tra cứu, Hướng xử trí)' && G.GUIDE_SHEET === 'Hướng xử trí');
 
 /* ===== 2. Bảng quyết định: lấy từ spec ===== */
