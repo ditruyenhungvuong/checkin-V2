@@ -20,15 +20,19 @@ nhập **Mã số bệnh nhân** → chạm 1 trong **10 chấm mức** (không 
 - **Ảnh thẻ**: `vui_ve.png`, `dau_kho.png`, `lo_lang.png`, `tuc_gian.png`, `hoang_hot.png`, `kho_chiu.png`, `met_moi.png`,
   `binh_an.png`, `co_don.png`: PNG 480×480 nền trong suốt, 47–59 KB/ảnh (nén từ ảnh gốc ~1,3–1,8 MB của anh:
   cắt sát hình, đệm vuông lề 6 %, bảng màu 256). Các file `.jpg` cũ (vui, buon, khoc, tuc, hoang_hot, kho_chiu) không còn dùng.
-- **Google Sheet cho bác sĩ** (menu "Check-in" → "Cài tô màu + Tổng hợp + Tra cứu", chạy một lần):
-  tô màu dòng theo mức (ĐỎ 1–3 · VÀNG 4–5 · XANH 6–10), tab **Tổng hợp** (mỗi mã số một dòng),
-  tab **Tra cứu** (gõ mã ở ô B2), khóa cứng các tab trừ ô B2. Cách chia sẻ cho bác sĩ ở đầu `google_apps_script.js` (BƯỚC 5).
+- **Google Sheet cho bác sĩ** (menu "Check-in" → "Cài bảng bác sĩ (màu, Tổng hợp, Tra cứu, Hướng xử trí)", chạy một lần,
+  chạy lại được): tô màu dòng theo mức (ĐỎ 1–3 · VÀNG 4–5 · XANH 6–10), tab **Tổng hợp** (mỗi mã số một dòng),
+  tab **Tra cứu** (gõ mã ở ô B2, chỉ người có quyền sửa), cột **Gợi ý mở đầu** (Tổng hợp cột G, Tra cứu cột E: một câu
+  gợi ý theo màu của mức và nhóm thẻ), tab **Hướng xử trí** ngay sau Tra cứu (bảng 3 màu + BÁO ĐỘNG, 9 thẻ chia 3 nhánh;
+  **bản nháp dùng thử 03/11/2026**, chưa ban hành, chưa kiểm định; chữ cố định trong code, tab khóa).
+  Khóa cứng cả bốn tab trừ ô B2. Bác sĩ quyền **Người xem** không gõ được ô B2: mở tab Tổng hợp, bấm **Ctrl+F** gõ mã số BN,
+  đọc cột G. Cách chia sẻ cho bác sĩ ở đầu `google_apps_script.js` (BƯỚC 5).
 
 ### Thứ tự triển khai
 
 1. **Apps Script trước**: dán `google_apps_script.js`, chạy thử, cập nhật bản triển khai AKfycbzfN8… lên Phiên bản mới
    (giữ URL) – BƯỚC 1–3 ở đầu file. Script mới vẫn nhận web cũ (6 cảm xúc).
-2. Chạy menu cài tô màu + Tổng hợp + Tra cứu (BƯỚC 4), chia sẻ cho bác sĩ (BƯỚC 5).
+2. Chạy menu "Cài bảng bác sĩ (màu, Tổng hợp, Tra cứu, Hướng xử trí)" (BƯỚC 4), chia sẻ cho bác sĩ (BƯỚC 5).
 3. **Web sau**, khi đã có ảnh 3 cảm xúc mới: `./upload.sh` (BƯỚC 6). Đẩy web trước khi xong bước 1 thì lượt chọn
    3 cảm xúc mới bị Apps Script cũ từ chối và mất.
 

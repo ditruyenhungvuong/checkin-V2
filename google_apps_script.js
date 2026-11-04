@@ -1,6 +1,6 @@
 /**
  * ============================================================
- *  GOOGLE APPS SCRIPT – CHECK-IN CẢM XÚC MẸ BẦU (bản 02/11/2026: 9 cảm xúc + bảng cho bác sĩ)
+ *  GOOGLE APPS SCRIPT – CHECK-IN CẢM XÚC MẸ BẦU (bản 04/11/2026: 9 cảm xúc + bảng cho bác sĩ + Hướng xử trí)
  *  (gốc: docs/style/apps-script-template.js của đội App Creator,
  *   kiểm dữ liệu theo apps/checkin-vao-ca/google_apps_script.js)
  * ============================================================
@@ -15,15 +15,24 @@
  *               Cùng Mã phiên (và cùng Mã số bệnh nhân) thì CẬP NHẬT dòng cũ, giữ nguyên
  *               giờ ở cột A → app gửi lại khi mạng chập chờn vẫn chỉ một dòng.
  *   2) doGet  : KHÔNG trả dữ liệu. Mở URL chỉ thấy "public_read_disabled".
- *   3) Menu "Check-in" → "Cài tô màu + Tổng hợp + Tra cứu" (anh chạy MỘT lần, chạy lại cũng được):
+ *   3) Menu "Check-in" → "Cài bảng bác sĩ (màu, Tổng hợp, Tra cứu, Hướng xử trí)"
+ *      (anh chạy MỘT lần, chạy lại cũng được):
  *               - tab CheckIn: tô cả dòng A–D theo mức ở cột C (chỉ theo mức, cảm xúc không đổi màu):
  *                   ĐỎ nhạt mức 1–3 · VÀNG nhạt mức 4–5 · XANH lá nhạt mức 6–10
  *               - tab "Tổng hợp": mỗi mã số bệnh nhân một dòng (lượt gần nhất, mức, cảm xúc,
  *                 số lượt, số lượt ĐỎ trong 14 ngày), mới nhất trên cùng, tự cập nhật bằng công thức
  *               - tab "Tra cứu": gõ mã số vào ô B2 → hiện mọi lượt của mã đó, mới nhất trên cùng
- *               - khóa (bảo vệ) cả ba tab, chỉ chủ file sửa được; riêng ô B2 của tab Tra cứu để mở
+ *               - cột "Gợi ý mở đầu" (Tổng hợp cột G, Tra cứu cột E): một câu gợi ý theo màu của mức
+ *                 và nhóm thẻ capybara (04/11/2026)
+ *               - tab "Hướng xử trí" (ngay sau Tra cứu): bảng 3 màu + BÁO ĐỘNG, 9 thẻ chia 3 nhánh, câu nên
+ *                 nói/tránh. Bản nháp dùng thử 03/11/2026, chưa ban hành, chưa kiểm định.
+ *               - khóa (bảo vệ) cả bốn tab, chỉ chủ file sửa được; riêng ô B2 của tab Tra cứu để mở
  *             doPost KHÔNG chạy phần này (mỗi lượt check-in chỉ ghi một dòng).
  *
+ *  Đổi ngày 04/11/2026 (anh Thông yêu cầu: bác sĩ thấy hướng xử trí ngay trên Sheet):
+ *   - Thêm tab "Hướng xử trí" và cột "Gợi ý mở đầu" (mục 3 ở trên); đổi tên mục menu.
+ *   - CHỈ đổi phần menu. doPost, kiểm dữ liệu, cột tab CheckIn và web giữ nguyên.
+ *   - Cách cài lần này: dán code → Lưu → BƯỚC 3 (Phiên bản mới, giữ URL) → BƯỚC 4 (chạy lại menu tên mới).
  *  Đổi ngày 02/11/2026 (anh Thông duyệt):
  *   - 9 cảm xúc theo bộ ảnh mới của anh: Vui vẻ, Đau khổ, Lo lắng, Tức giận, Hoảng hốt, Khó chịu,
  *     Mệt mỏi, Bình an, Cô đơn. Chuỗi khác vẫn bị từ chối.
@@ -73,15 +82,19 @@
  *    3.3 Mở URL đó trên trình duyệt → phải thấy
  *            {"result":"error","error":"public_read_disabled"}
  *
- *  BƯỚC 4 – Chạy menu cài tô màu + Tổng hợp + Tra cứu (MỘT lần)
+ *  BƯỚC 4 – Chạy menu cài bảng bác sĩ (MỘT lần)
  *    4.1 Quay lại tab Google Sheet, bấm tải lại trang (F5). Trên thanh menu hiện thêm "Check-in"
  *        (đợi vài giây sau khi tải).
- *    4.2 Check-in → Cài tô màu + Tổng hợp + Tra cứu. Lần đầu Google hỏi quyền: cho phép như 2.4,
- *        rồi bấm lại menu một lần nữa.
+ *    4.2 Check-in → Cài bảng bác sĩ (màu, Tổng hợp, Tra cứu, Hướng xử trí). Lần đầu Google hỏi quyền:
+ *        cho phép như 2.4, rồi bấm lại menu một lần nữa. (Menu cũ tên "Cài tô màu + Tổng hợp + Tra cứu":
+ *        tải lại trang F5 là thấy tên mới.)
  *    4.3 Thấy hộp "Đã cài xong" là được. Kiểm tra nhanh:
  *        - tab CheckIn: các dòng có màu đỏ nhạt / vàng nhạt / xanh lá nhạt theo mức;
  *        - tab "Tổng hợp": mỗi mã số một dòng, mới nhất trên cùng;
- *        - tab "Tra cứu": gõ một mã số đang có vào ô B2, Enter → hiện các lượt của mã đó.
+ *        - tab "Tra cứu": gõ một mã số đang có vào ô B2, Enter → hiện các lượt của mã đó;
+ *        - cột "Gợi ý mở đầu" (Tổng hợp cột G, Tra cứu cột E) có chữ, bắt đầu bằng ĐỎ / VÀNG / XANH
+ *          đúng màu của dòng; dòng không có mức hợp lệ thì để trống;
+ *        - tab "Hướng xử trí" đứng ngay sau tab Tra cứu, ô A2 ghi "Bản nháp dùng thử…".
  *        Menu nới tab CheckIn và Tổng hợp lên 20 000 hàng để vùng tô màu phủ đủ. Khi tab CheckIn
  *        vượt 20 000 lượt (script tự thêm hàng), chạy lại menu để các dòng mới cũng có màu.
  *        Công thức tự ghi theo ngôn ngữ của file: file tiếng Việt dùng dấu chấm phẩy ";" (ví dụ
@@ -89,9 +102,12 @@
  *        Nếu ô Tổng hợp!A2 hay Tra cứu!A6 hiện #ERROR! (bản 02/11 trước 21 giờ ghi dấu phẩy), dán bản
  *        script này rồi chạy lại menu: menu ghi lại hai ô đó và thay 3 quy tắc màu cũ (không nhân đôi).
  *    4.4 Chạy lại menu lúc nào cũng được (ví dụ lỡ xóa tab Tổng hợp): menu dựng lại tab Tổng hợp,
- *        Tra cứu và quy tắc tô màu của nó; KHÔNG đụng dữ liệu ở tab CheckIn, không xóa quy tắc
- *        tô màu anh tự đặt. Nếu đã có tab tên "Tổng hợp" hay "Tra cứu" do anh tự tạo (không phải
- *        menu tạo), menu KHÔNG ghi đè: anh đổi tên tab đó rồi chạy lại.
+ *        Tra cứu, Hướng xử trí và quy tắc tô màu của chúng; KHÔNG đụng dữ liệu ở tab CheckIn, không xóa
+ *        quy tắc tô màu anh tự đặt. Nếu đã có tab tên "Tổng hợp", "Tra cứu" hay "Hướng xử trí" do anh tự
+ *        tạo (không phải menu tạo), menu KHÔNG ghi đè: anh đổi tên tab đó rồi chạy lại.
+ *        Muốn sửa chữ trong tab Hướng xử trí: sửa GUIDE_ROWS / OPENER_TEXTS trong code rồi chạy lại menu
+ *        (tab bị khóa, sửa tay sẽ mất khi chạy lại menu). Ở GUIDE_ROWS chỉ sửa chữ trong ô, KHÔNG thêm/bớt
+ *        hàng (ô gộp và màu gắn theo số hàng).
  *
  *  BƯỚC 5 – Chia sẻ Sheet cho bác sĩ (chọn MỘT trong hai cách)
  *    Giữ nguyên "Quyền truy cập chung: Hạn chế" (Restricted) – KHÔNG chọn "Bất kỳ ai có đường liên kết".
@@ -99,14 +115,15 @@
  *    "Thông báo cho mọi người" (Notify people) nếu không muốn Google gửi thư → Gửi / Chia sẻ.
  *
  *    Cách 1 (nên dùng) – quyền "Người xem" (Viewer):
- *      - Bác sĩ xem tab "Tổng hợp" (mỗi mã số một dòng, có màu) và tab CheckIn.
+ *      - Bác sĩ xem tab "Tổng hợp" (mỗi mã số một dòng, có màu, có Gợi ý mở đầu), tab "Hướng xử trí"
+ *        và tab CheckIn.
  *      - Người xem KHÔNG gõ được vào ô, nên ô tra cứu B2 không dùng được. Để tìm một mã:
  *        Ctrl+F, hoặc Dữ liệu (Data) → Chế độ xem bộ lọc (Filter views) → Tạo chế độ xem bộ lọc
  *        tạm thời (Create temporary filter view) rồi lọc cột B – không ảnh hưởng người khác.
  *      - Tải về máy: Tệp (File) → Tải xuống (Download) → Microsoft Excel (.xlsx). Màu giữ nguyên;
  *        file Excel là bản chụp lúc tải, không tự cập nhật.
  *    Cách 2 – quyền "Người chỉnh sửa" (Editor), để gõ được ô tra cứu B2:
- *      - Tab CheckIn, Tổng hợp và tab Tra cứu (trừ ô B2) đã khóa, chỉ anh sửa được.
+ *      - Tab CheckIn, Tổng hợp, Hướng xử trí và tab Tra cứu (trừ ô B2) đã khóa, chỉ anh sửa được.
  *      - Trong hộp Chia sẻ bấm bánh răng (Cài đặt) → BỎ chọn "Người chỉnh sửa có thể thay đổi quyền
  *        và chia sẻ" (Editors can change permissions and share).
  *      - Lưu ý 1: nhiều bác sĩ dùng chung MỘT ô B2; ai gõ sau thì mọi người cùng thấy kết quả của
@@ -120,7 +137,7 @@
  *        1 dòng, cột D đúng "Cô đơn", dòng có màu theo mức. Xong thì xóa dòng thử đó.
  *
  *  LẦN SAU CHỈ SỬA CODE: dán code mới → Lưu → làm lại BƯỚC 3 (Phiên bản mới, giữ URL).
- *    Chỉ chạy lại menu (BƯỚC 4) khi bản sửa có đổi phần tô màu / Tổng hợp / Tra cứu.
+ *    Chỉ chạy lại menu (BƯỚC 4) khi bản sửa có đổi phần tô màu / Tổng hợp / Tra cứu / Hướng xử trí.
  *
  *  KHI CẦN URL MỚI (ví dụ URL bị lộ cho người lạ gửi rác): Triển khai → Triển khai mới
  *    → bánh răng → Ứng dụng web; Thực thi với tư cách: Tôi; Ai có quyền truy cập: Bất kỳ ai
@@ -401,7 +418,7 @@ function doGet() {
   return json_({ result: 'error', error: 'public_read_disabled' });
 }
 
-/* ===== Bảng cho bác sĩ: tô màu + Tổng hợp + Tra cứu =====
+/* ===== Bảng cho bác sĩ: tô màu + Tổng hợp + Tra cứu + Hướng xử trí =====
  * Anh chạy MỘT lần từ menu "Check-in" (xem BƯỚC 4 ở đầu file). KHÔNG chạy trong doPost.
  * Mọi công thức dưới đây là chuỗi CỐ ĐỊNH trong code (chỉ ghép tên tab SHEET_NAME), KHÔNG ghép
  * bất kỳ chuỗi nào người dùng gửi lên. Dữ liệu trong tab CheckIn đều đã qua whitelist ở doPost.
@@ -415,8 +432,9 @@ var LOOKUP_INPUT  = 'B2';                    // ô gõ mã số ở tab Tra cứ
 var LOOKUP_FIRST_ROW = 6;                    // hàng đầu kết quả tra cứu (hàng 5 là tiêu đề)
 var TAB_META_KEY  = 'checkin_me_bau_tab';    // dấu ẩn đánh dấu tab do menu tạo → được phép ghi đè
 var PROTECT_DESC  = 'Check-in Mẹ Bầu: chỉ chủ file sửa (menu Check-in tạo)';
+var GUIDE_SHEET   = 'Hướng xử trí';             // tab tĩnh, đứng ngay sau tab Tra cứu (04/11/2026)
 var MENU_NAME     = 'Check-in';
-var MENU_ITEM     = 'Cài tô màu + Tổng hợp + Tra cứu';
+var MENU_ITEM     = 'Cài bảng bác sĩ (màu, Tổng hợp, Tra cứu, Hướng xử trí)';
 
 // Màu nhạt dễ đọc (bảng màu nhạt của Google Sheets), chữ giữ màu mặc định
 var ALERT_COLORS = { red: '#F4CCCC', yellow: '#FFF2CC', green: '#D9EAD3' };
@@ -427,6 +445,7 @@ var ALERT_BANDS = [
   { from: 6, to: 10, label: 'XANH', color: ALERT_COLORS.green }
 ];
 var INPUT_BG = '#FFF59D';                    // nền vàng nhạt cho ô gõ mã số
+var ALARM_BG = '#EA9999';                    // nền hàng BÁO ĐỘNG ở tab Hướng xử trí (đậm hơn đỏ nhạt)
 
 /** Thêm menu "Check-in" mỗi khi mở Sheet (trigger đơn giản của Google, không cần cài). */
 function onOpen() {
@@ -671,14 +690,139 @@ function lookupFormula_() {
     '"Chưa có lượt check-in nào với mã số này."))))';
 }
 
+/* ===== Cột "Gợi ý mở đầu" (04/11/2026, anh duyệt theo docs/specs/checkin-me-bau-huong-xu-tri.md) =====
+ * Màu theo MỨC quyết định dành bao nhiêu thời gian; nhóm THẺ quyết định nói câu gì.
+ * Chữ lấy nguyên văn bảng quyết định trong spec (tờ quy trình bản nháp 03/11/2026), KHÔNG tự thêm ý.
+ * Thẻ so khớp NGUYÊN CHUỖI sau TRIM (phân biệt hoa thường); thẻ khác hoặc trống coi như không có thẻ.
+ */
+var CARD_GROUPS = [
+  { key: 'deChiu', cards: ['Vui vẻ', 'Bình an'] },                              // 1. dễ chịu
+  { key: 'lamDiu', cards: ['Hoảng hốt', 'Tức giận', 'Lo lắng', 'Khó chịu'] },   // 2. cần làm dịu trước
+  { key: 'dauKho', cards: ['Đau khổ'] },                                         // 3. đau khổ (riêng)
+  { key: 'ketNoi', cards: ['Cô đơn', 'Mệt mỏi', 'Buồn'] }                       // 4. kết nối, nâng đỡ ("Buồn": nhãn trước 02/11)
+];
+// Chữ trong ô theo (dải mức, nhóm thẻ). khac = thẻ khác/trống. Dòng mức lạ (không số, 0, > 10) → ô trống.
+var OPENER_TEXTS = {
+  red: {
+    deChiu: 'ĐỎ · Chỗ lệch: chấm thấp mà chọn bé dễ chịu, hỏi nhẹ chỗ chưa khớp. Hỏi câu an toàn, cho làm EPDS.',
+    dauKho: 'ĐỎ · Đồng hành với đau buồn, không dùng kỹ thuật làm dịu lo âu. Hỏi câu an toàn, cho làm EPDS.',
+    lamDiu: 'ĐỎ · Làm dịu trước (nói chậm, cho thở) rồi mới hỏi. Hỏi câu an toàn, cho làm EPDS.',
+    ketNoi: 'ĐỎ · Kết nối, nâng đỡ: nhóm im lặng, dễ bị bỏ sót. Hỏi câu an toàn, cho làm EPDS.',
+    khac:   'ĐỎ · Hỏi cảm xúc trước khi tư vấn. Hỏi câu an toàn, cho làm EPDS.'
+  },
+  yellow: {
+    lamDiu:        'VÀNG · 2–3 phút đầu: làm dịu trước (nói chậm, cho thở) rồi hỏi về bé chị chọn.',
+    dauKhoKetNoi:  'VÀNG · 2–3 phút đầu: kết nối, nâng đỡ; nhóm này dễ bị bỏ sót vì im lặng.',
+    deChiuKhac:    'VÀNG · 2–3 phút đầu: hỏi cảm xúc trước khi đưa thông tin chuyên môn.'
+  },
+  green: {
+    deChiuKhac: 'XANH · Tư vấn như thường lệ.',
+    conLai:     'XANH · Hỏi đúng một câu về bé chị chọn rồi đi tiếp.'
+  }
+};
+
+/** Chuỗi trong công thức: bọc "…", nháy kép bên trong thành "" (chữ cố định, không có dữ liệu người dùng). */
+function q_(s) { return '"' + String(s).replace(/"/g, '""') + '"'; }
+
+/**
+ * Công thức mảng cột "Gợi ý mở đầu" theo cột mức lv (ví dụ "C2:C") và cột thẻ cv (ví dụ "D2:D").
+ * Cùng kiểu LET + ARRAYFORMULA như lookupFormula_ (đã chạy đúng trên Sheet thật 02/11/2026).
+ *   mucG  : số mức (REGEXEXTRACT "^\d+", dòng lạ → 0)
+ *   theG  : thẻ đã TRIM
+ *   nhomG : 1 dễ chịu · 2 làm dịu · 3 đau khổ · 4 kết nối · 0 khác/trống
+ */
+function openerFormula_(lv, cv) {
+  var g = function (i) { return 'REGEXMATCH(theG,' + q_('^(' + CARD_GROUPS[i].cards.join('|') + ')$') + ')'; };
+  var R = OPENER_TEXTS.red, Y = OPENER_TEXTS.yellow, G = OPENER_TEXTS.green;
+  return '=LET(mucG,' + levelArrayF_(lv) + ',' +
+    'theG,ARRAYFORMULA(TRIM(TO_TEXT(' + cv + '))),' +
+    'nhomG,ARRAYFORMULA(IF(' + g(0) + ',1,IF(' + g(1) + ',2,IF(' + g(2) + ',3,IF(' + g(3) + ',4,0))))),' +
+    'ARRAYFORMULA(' +
+      'IF((mucG>=1)*(mucG<=3),' +
+        'IF(nhomG=1,' + q_(R.deChiu) + ',IF(nhomG=3,' + q_(R.dauKho) + ',IF(nhomG=2,' + q_(R.lamDiu) + ',IF(nhomG=4,' + q_(R.ketNoi) + ',' + q_(R.khac) + ')))),' +
+      'IF((mucG>=4)*(mucG<=5),' +
+        'IF(nhomG=2,' + q_(Y.lamDiu) + ',IF(nhomG>=3,' + q_(Y.dauKhoKetNoi) + ',' + q_(Y.deChiuKhac) + ')),' +
+      'IF((mucG>=6)*(mucG<=10),' +
+        'IF(nhomG>=2,' + q_(G.conLai) + ',' + q_(G.deChiuKhac) + '),' +
+      '"")))))';
+}
+
+/* ===== Tab "Hướng xử trí": nội dung TĨNH, chữ nguyên văn spec 04/11/2026 (bản nháp dùng thử 03/11/2026) =====
+ * Không công thức, không dữ liệu bệnh nhân. Khóa cứng cả tab, không ô nào mở.
+ * Mỗi hàng 4 ô A–D ("·" trong spec = sang cột). "\n" = xuống dòng trong ô.
+ * Chỉ sửa chữ trong ô, KHÔNG thêm/bớt hàng (ô gộp và màu gắn theo số hàng: buildGuide_ gộp A1–A4, A12,
+ * A25, B20–B23 và tô nền hàng 7–10 theo số hàng cố định).
+ */
+var GUIDE_ROWS = [
+  /* 1 */ ['HƯỚNG XỬ TRÍ PHIẾU CHECK-IN CẢM XÚC MẸ BẦU THEO 3 MÀU', '', '', ''],
+  /* 2 */ ['Bản nháp dùng thử, cập nhật 03/11/2026 – chưa ban hành, chưa kiểm định. Phiếu là tự đánh giá, không phải công cụ chẩn đoán, không thay EPDS.', '', '', ''],
+  /* 3 */ ['Cách dùng: ngay trước khi gọi thai phụ vào, mở tab Tổng hợp, bấm Ctrl+F gõ mã số BN; cột G là gợi ý mở đầu. Người có quyền sửa có thể gõ mã ở tab Tra cứu để xem mọi lượt. Màu theo mức quyết định dành bao nhiêu thời gian; thẻ capybara quyết định nói câu gì. Thẻ không tham gia xếp màu.', '', '', ''],
+  /* 4 */ ['Lượt trước 02/11/2026: app cũ để sẵn mức 5, nên mức 5 của lượt cũ có thể là mặc định, hỏi lại bằng lời. Từ 02/11 thai phụ phải tự chạm chọn mức. Thẻ "Buồn" (trước 02/11) nay là "Đau khổ".', '', '', ''],
+  /* 5 */ ['', '', '', ''],
+  /* 6 */ ['Màu', 'Khi nào', 'Bác sĩ tư vấn làm gì', 'Bước tiếp theo'],
+  /* 7 */ ['XANH – Ổn định',
+           'Mức 6–10, bất kể thẻ.',
+           'Tư vấn như thường lệ. Mở đầu: "Cảm ơn chị đã check-in, hôm nay chị thấy khá ổn phải không?"\n' +
+           'Nếu thẻ là cảm xúc khó chịu (Lo lắng, Đau khổ, Mệt mỏi, Cô đơn…): hỏi đúng một câu về cảm xúc đó rồi đi tiếp: "Chị chọn bé đang lo lắng, chị kể thêm cho bác sĩ được không?"\n' +
+           'Cuối buổi: tờ thông tin sức khỏe tinh thần khi mang thai (dấu hiệu cần tìm giúp đỡ, số liên hệ).',
+           'Tầng 1. Check-in lại ở lần đến sau.'],
+  /* 8 */ ['VÀNG – Hỏi trước khi tư vấn',
+           'Mức 4–5 (Kém, Bình thường), bất kể thẻ.',
+           'Dành 2–3 phút đầu để hỏi trước khi đưa thông tin chuyên môn. Phản chiếu thẻ bằng chữ của thai phụ: "Chị chọn bé đang …, chị chia sẻ thêm cho bác sĩ được không?" (không nói "bác sĩ thấy chị đang …").\n' +
+           'Cần làm dịu trước (Hoảng hốt, Tức giận, Lo lắng, Khó chịu): nói chậm, cho thở, rồi mới hỏi.\n' +
+           'Cần kết nối và nâng đỡ (Đau khổ, Cô đơn, Mệt mỏi): không cần làm dịu; nhóm này dễ bị bỏ sót vì im lặng.\n' +
+           'Lo theo tình huống (kết quả, thủ thuật, thai): giải thích chậm, kiểm tra hiểu, hẹn ngày có kết quả; mời làm STOP-4P (10 phút) khi chờ chọc ối.\n' +
+           'Lo/buồn kéo dài ≥ 2 tuần, mất ngủ, chán ăn, mất hứng thú: cho làm EPDS (đủ 10 câu).',
+           'EPDS < 12 và câu 10 = 0: tầng 1, check-in lại lần sau, tài liệu tự chăm sóc.\n' +
+           'EPDS ≥ 12: xử trí như ĐỎ.\n' +
+           'Câu 10 > 0: BÁO ĐỘNG.'],
+  /* 9 */ ['ĐỎ – Đánh giá trong buổi',
+           'Mức 1–3 (Tồi tệ, Rất tồi tệ, Tuyệt vọng), bất kể thẻ; hoặc EPDS ≥ 12 từ nhánh vàng.',
+           'Hỏi về cảm xúc trước, trong buổi tư vấn, trước khi thai phụ rời khoa.\n' +
+           'Nếu thẻ là Vui vẻ hoặc Bình an: đây là chỗ lệch, hỏi nhẹ: "Chị chấm 2 mà lại chọn bé vui vẻ, chị kể thêm giúp bác sĩ được không?"\n' +
+           'Thẻ Đau khổ sau khi nhận kết quả xấu: đồng hành với đau buồn, không dùng kỹ thuật làm dịu lo âu.\n' +
+           'Cho làm EPDS và hỏi trực tiếp câu hỏi an toàn: "Hai tuần qua, có lúc nào chị nghĩ đến việc làm hại bản thân không?"\n' +
+           'Hỏi yếu tố nguy cơ: tiền sử trầm cảm, mất thai, thai bất thường, bạo lực gia đình, thiếu người hỗ trợ.',
+           'Nhẹ: tư vấn nâng đỡ tại khoa (tầng 2).\n' +
+           'Vừa–nặng: chuyển chuyên viên tâm lý (tầng 3), hẹn ≤ 7 ngày.\n' +
+           'Không đến hẹn: gọi lại, ghi sổ.\n' +
+           'Câu hỏi an toàn dương tính: BÁO ĐỘNG.'],
+  /* 10 */ ['⚠ BÁO ĐỘNG – Mọi màu',
+           'Ý nghĩ tự hại hoặc hại con; bạo lực đang diễn ra; lời nói, hành vi bất thường.',
+           'Người phát hiện, ngay. Không để thai phụ một mình, không để tự đi liên hệ.\n' +
+           'Hỏi rõ ý định, kế hoạch, phương tiện; xếp mức nguy cơ theo Quy trình an toàn chung (chưa ghi nhận / thấp / trung bình / cao hoặc cận kề).',
+           'Giờ hành chính: gọi tầng 3 [cần xác nhận: số gọi].\n' +
+           'Ngoài giờ: bác sĩ trực khoa [cần xác nhận: số trực], báo trực lãnh đạo.\n' +
+           'Mức cao: cấp cứu tâm thần (tầng 4).'],
+  /* 11 */ ['', '', '', ''],
+  /* 12 */ ['9 thẻ capybara chia 3 nhánh', '', '', ''],
+  /* 13 */ ['Nhánh', 'Thẻ', 'Làm gì', ''],
+  /* 14 */ ['1. Thẻ dễ chịu', 'Vui vẻ, Bình an', 'Ở xanh: đi tiếp bình thường. Ở đỏ: đây là chỗ lệch, hỏi nhẹ.', ''],
+  /* 15 */ ['2. Cần làm dịu trước', 'Hoảng hốt, Tức giận, Lo lắng, Khó chịu', 'Nói chậm, cho thở, rồi mới hỏi.', ''],
+  /* 16 */ ['3. Cần kết nối và nâng đỡ', 'Đau khổ, Cô đơn, Mệt mỏi', 'Không cần làm dịu. Nhóm dễ bị bỏ sót nhất vì im lặng. Thẻ Đau khổ: dùng tài nguyên đau buồn, không dùng kỹ thuật làm dịu lo âu.', ''],
+  /* 17 */ ['Lưu ý', 'Thẻ chỉ có hình, xáo thứ tự mỗi lượt', 'Thẻ là cách thai phụ hiểu hình, không phải nhãn cảm xúc chuẩn. Không so vị trí thẻ giữa các lượt.', ''],
+  /* 18 */ ['', '', '', ''],
+  /* 19 */ ['Nên nói', '"Cảm ơn chị đã chia sẻ."', '"Nhiều mẹ bầu cũng có cảm giác này, mình cùng tìm cách hỗ trợ chị."', '"Chị có muốn người nhà cùng nghe không?"'],
+  /* 20 */ ['Tránh', '"Chị đừng lo", "Ai mang thai cũng vậy", "Bác sĩ thấy chị đang …", hứa giữ bí mật khi có nguy cơ tự hại.', '', ''],
+  /* 21 */ ['Câu tự tạo khoảng cách', '"Nếu chị khuyên những người đang lo lắng giống chị thì chị sẽ nói gì?" Chỉ dùng cho VÀNG và XANH. Với ĐỎ: chỉ hỏi sau khi thai phụ đã nói xong và đã hỏi câu an toàn. Đây là cách làm theo kinh nghiệm, chưa có nghiên cứu ở thai phụ.', '', ''],
+  /* 22 */ ['Ghi chép', 'Ghi vào hồ sơ tư vấn: màu, câu hỏi an toàn đã hỏi, điểm EPDS (nếu có), hướng xử trí. Không chụp, không chuyển bảng có mã số ra ngoài. Chỉ tiêu: 100% ca ĐỎ và BÁO ĐỘNG có ghi câu hỏi an toàn và hướng xử trí trong hồ sơ.', '', ''],
+  /* 23 */ ['Phiếu gửi ngoài giờ, từ nhà', 'Bác sĩ đọc khi thai phụ đến buổi tư vấn. Ca ĐỎ chưa có lịch hẹn gần: [cần xác nhận: có gọi lại không, ai gọi].', '', ''],
+  /* 24 */ ['', '', '', ''],
+  /* 25 */ ['Căn cứ: luồng sàng lọc chung, ngưỡng EPDS ≥ 12 và Quy trình an toàn chung trong tham luận "Chăm sóc sức khỏe tâm thần phân tầng tại Bệnh viện Hùng Vương" (11/2026); nghiên cứu STOP-4P tại khoa (n = 84, số liệu nội bộ chưa công bố); thang siêu ngắn loại trừ tốt hơn xác định, không dùng riêng để chẩn đoán (Steel & Carr 2022). Ngưỡng 3 màu là đề xuất của nhóm, chưa thẩm định.', '', '', '']
+];
+var GUIDE_WIDTHS = [110, 170, 470, 260];      // A màu · B khi nào · C bác sĩ làm gì · D bước tiếp theo
+
 /** Dựng tab Tổng hợp (tab rỗng do ownTab_ trả về). */
 function buildSummary_(sh) {
-  headerRow_(sh, 1, ['Mã số BN', 'Lượt gần nhất (giờ)', 'Mức gần nhất', 'Cảm xúc gần nhất', 'Số lượt', 'Số lượt ĐỎ trong 14 ngày']);
+  headerRow_(sh, 1, ['Mã số BN', 'Lượt gần nhất (giờ)', 'Mức gần nhất', 'Cảm xúc gần nhất', 'Số lượt', 'Số lượt ĐỎ trong 14 ngày', 'Gợi ý mở đầu']);
   sh.setFrozenRows(1);
   sh.getRange('A2').setFormula(fx_(summaryFormula_(), FORMULA_SEP));
-  [120, 160, 170, 170, 80, 190].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
+  // G2: gợi ý mở đầu theo mức (C) + cảm xúc (D) của chính dòng đó (04/11/2026)
+  sh.getRange('G2').setFormula(fx_(openerFormula_('C2:C', 'D2:D'), FORMULA_SEP));
+  [120, 160, 170, 170, 80, 190, 420].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
   ensureRows_(sh, MIN_ROWS);   // mỗi mã số một dòng: đủ chỗ và đủ vùng tô màu cho tới 20 000 mã
-  applyAlertColors_(sh, 'A2:F' + sh.getMaxRows(), '$C2');
+  sh.getRange('G1:G' + sh.getMaxRows()).setWrap(true).setVerticalAlignment('top');
+  applyAlertColors_(sh, 'A2:G' + sh.getMaxRows(), '$C2');
 }
 
 /** Dựng tab Tra cứu (tab rỗng do ownTab_ trả về). */
@@ -689,12 +833,57 @@ function buildLookup_(sh) {
   sh.getRange(LOOKUP_INPUT).setNumberFormat('@').setBackground(INPUT_BG).setFontWeight('bold')
     .setBorder(true, true, true, true, false, false, '#F9A825', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
   sh.getRange('C2').setValue('← gõ mã số rồi bấm Enter (người xem không gõ được ô này)').setFontColor('#7a636c');
-  sh.getRange('A3').setValue('Màu theo mức: ĐỎ 1–3 · VÀNG 4–5 · XANH 6–10. Tự đánh giá, không phải thang chẩn đoán.').setFontColor('#7a636c');
-  headerRow_(sh, LOOKUP_FIRST_ROW - 1, ['Thời gian', 'Mức', 'Cảm xúc', 'Cảnh báo']);
+  sh.getRange('A3').setValue('Màu theo mức: ĐỎ 1–3 · VÀNG 4–5 · XANH 6–10. Tự đánh giá, không phải thang chẩn đoán. ' +
+    'Xem tab Hướng xử trí trước khi gọi thai phụ vào.').setFontColor('#7a636c');
+  headerRow_(sh, LOOKUP_FIRST_ROW - 1, ['Thời gian', 'Mức', 'Cảm xúc', 'Cảnh báo', 'Gợi ý mở đầu']);
   sh.setFrozenRows(LOOKUP_FIRST_ROW - 1);
   sh.getRange('A' + LOOKUP_FIRST_ROW).setFormula(fx_(lookupFormula_(), FORMULA_SEP));
-  [170, 190, 170, 90].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
-  applyAlertColors_(sh, 'A' + LOOKUP_FIRST_ROW + ':D' + sh.getMaxRows(), '$B' + LOOKUP_FIRST_ROW);
+  // E6: gợi ý mở đầu theo Mức (B) + Cảm xúc (C) của từng lượt tra được (04/11/2026)
+  sh.getRange('E' + LOOKUP_FIRST_ROW).setFormula(fx_(openerFormula_('B' + LOOKUP_FIRST_ROW + ':B', 'C' + LOOKUP_FIRST_ROW + ':C'), FORMULA_SEP));
+  [170, 190, 170, 90, 420].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
+  sh.getRange('E' + (LOOKUP_FIRST_ROW - 1) + ':E' + sh.getMaxRows()).setWrap(true).setVerticalAlignment('top');
+  applyAlertColors_(sh, 'A' + LOOKUP_FIRST_ROW + ':E' + sh.getMaxRows(), '$B' + LOOKUP_FIRST_ROW);
+}
+
+/**
+ * Dựng tab Hướng xử trí (tab rỗng do ownTab_ trả về): chữ tĩnh GUIDE_ROWS, không công thức.
+ * Mọi ô dạng văn bản (@) để Sheets không hiểu nhầm chữ (ví dụ "1. Thẻ dễ chịu") thành số/ngày.
+ */
+function buildGuide_(sh) {
+  var n = GUIDE_ROWS.length, all = sh.getRange(1, 1, n, 4);
+  all.breakApart();                                  // chạy lại menu: bỏ ô gộp cũ rồi gộp lại như dưới
+  all.setNumberFormat('@');
+  all.setValues(GUIDE_ROWS);
+  all.setVerticalAlignment('top').setWrap(true);
+  GUIDE_WIDTHS.forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
+  // Tiêu đề, trạng thái bản nháp, cách dùng, lưu ý lượt cũ: gộp A–D cho dễ đọc
+  ['A1:D1', 'A2:D2', 'A3:D3', 'A4:D4', 'A12:D12', 'A25:D25'].forEach(function (a1) { sh.getRange(a1).merge(); });
+  sh.getRange('A1').setFontWeight('bold').setFontSize(13).setFontColor('#880E4F');
+  sh.getRange('A2').setFontWeight('bold');
+  sh.getRange('A12').setFontWeight('bold');
+  headerRow_(sh, 6, GUIDE_ROWS[5]);
+  headerRow_(sh, 13, GUIDE_ROWS[12].slice(0, 3));
+  // Ba hàng màu dùng đúng màu tô ở các tab khác; hàng BÁO ĐỘNG nền đậm hơn, chữ đậm
+  sh.getRange('A7:D7').setBackground(ALERT_COLORS.green);
+  sh.getRange('A8:D8').setBackground(ALERT_COLORS.yellow);
+  sh.getRange('A9:D9').setBackground(ALERT_COLORS.red);
+  sh.getRange('A10:D10').setBackground(ALARM_BG).setFontWeight('bold');
+  sh.getRange('A7:A9').setFontWeight('bold');
+  sh.getRange('A19:A23').setFontWeight('bold');
+  // Hàng 20–23 chỉ có một ý: gộp B–D (cột B hẹp)
+  ['B20:D20', 'B21:D21', 'B22:D22', 'B23:D23'].forEach(function (a1) { sh.getRange(a1).merge(); });
+  sh.getRange('A25').setFontColor('#7a636c').setFontSize(9);
+}
+
+/**
+ * Đặt tab sh ngay sau tab after (vị trí đếm từ 1). Đúng chỗ rồi thì không làm gì.
+ * moveActiveSheet(pos) đưa tab đang chọn về đúng vị trí pos, nên tab sh sẽ đang được chọn sau khi dời.
+ */
+function placeAfter_(ss, sh, after) {
+  if (!after || sh.getIndex() === after.getIndex() + 1) return;
+  var pos = sh.getIndex() < after.getIndex() ? after.getIndex() : after.getIndex() + 1;
+  ss.setActiveSheet(sh);
+  ss.moveActiveSheet(pos);
 }
 
 /** Báo cho anh: có giao diện Sheet thì hiện hộp thoại, chạy từ editor thì ghi Nhật ký. */
@@ -703,8 +892,8 @@ function say_(msg) {
 }
 
 /**
- * MENU "Check-in" → "Cài tô màu + Tổng hợp + Tra cứu". Chạy lại nhiều lần vẫn ra cùng kết quả.
- * Không ghi, không xóa dòng dữ liệu nào ở tab CheckIn.
+ * MENU "Check-in" → "Cài bảng bác sĩ (màu, Tổng hợp, Tra cứu, Hướng xử trí)".
+ * Chạy lại nhiều lần vẫn ra cùng kết quả. Không ghi, không xóa dòng dữ liệu nào ở tab CheckIn.
  */
 function caiDatBangBacSi() {
   var lock = LockService.getScriptLock();
@@ -714,7 +903,7 @@ function caiDatBangBacSi() {
     var src = sheet_();
     ensureHeader_(src);
     var notes = [];
-    var res = { checkinRules: 0, summary: false, lookup: false, locks: [], sep: '' };
+    var res = { checkinRules: 0, summary: false, lookup: false, guide: false, locks: [], sep: '' };
 
     // Cú pháp công thức theo ngôn ngữ của file (file tiếng Việt dùng ";"), thử trên tab tạm
     FORMULA_SEP = detectFormulaSep_(ss);
@@ -732,20 +921,30 @@ function caiDatBangBacSi() {
     if (sum) { buildSummary_(sum); res.summary = true; }
     else notes.push('Tab "' + SUMMARY_SHEET + '" có sẵn do anh tự tạo nên mình không ghi đè. Anh đổi tên tab đó rồi chạy lại menu.');
 
-    // d) Tab Tra cứu
+    // c) Tab Tra cứu
     var look = ownTab_(ss, LOOKUP_SHEET, 'tra_cuu');
     if (look) { buildLookup_(look); res.lookup = true; }
     else notes.push('Tab "' + LOOKUP_SHEET + '" có sẵn do anh tự tạo nên mình không ghi đè. Anh đổi tên tab đó rồi chạy lại menu.');
 
-    // Khóa cứng: CheckIn, Tổng hợp, Tra cứu (trừ ô gõ mã)
+    // d) Tab Hướng xử trí (chữ tĩnh), đứng ngay sau tab Tra cứu
+    var guide = ownTab_(ss, GUIDE_SHEET, 'huong_xu_tri');
+    if (guide) {
+      buildGuide_(guide);
+      placeAfter_(ss, guide, ss.getSheetByName(LOOKUP_SHEET));
+      res.guide = true;
+    } else notes.push('Tab "' + GUIDE_SHEET + '" có sẵn do anh tự tạo nên mình không ghi đè. Anh đổi tên tab đó rồi chạy lại menu.');
+
+    // Khóa cứng: CheckIn, Tổng hợp, Tra cứu (trừ ô gõ mã), Hướng xử trí (không ô nào mở)
     if (lockSheet_(src)) res.locks.push(SHEET_NAME);
     else notes.push('Tab ' + SHEET_NAME + ' đã có khóa anh tự đặt, mình giữ nguyên khóa đó.');
     if (sum && lockSheet_(sum)) res.locks.push(SUMMARY_SHEET);
     if (look && lockSheet_(look, [look.getRange(LOOKUP_INPUT)])) res.locks.push(LOOKUP_SHEET);
+    if (guide && lockSheet_(guide)) res.locks.push(GUIDE_SHEET);
 
     say_('Đã cài xong: tô màu tab ' + SHEET_NAME +
-         (res.summary ? ', tab "' + SUMMARY_SHEET + '"' : '') +
-         (res.lookup ? ', tab "' + LOOKUP_SHEET + '" (gõ mã ở ô ' + LOOKUP_INPUT + ')' : '') +
+         (res.summary ? ', tab "' + SUMMARY_SHEET + '" (có cột Gợi ý mở đầu)' : '') +
+         (res.lookup ? ', tab "' + LOOKUP_SHEET + '" (gõ mã ở ô ' + LOOKUP_INPUT + ', có cột Gợi ý mở đầu)' : '') +
+         (res.guide ? ', tab "' + GUIDE_SHEET + '" (bản nháp dùng thử 03/11/2026, đọc trước khi tư vấn)' : '') +
          '. Đã khóa: ' + (res.locks.join(', ') || 'không tab nào') + '.' +
          '\nCông thức ghi theo ' + sepText + '.' +
          (notes.length ? '\n\n' + notes.join('\n') : ''));

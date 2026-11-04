@@ -10,6 +10,8 @@
    02/11/2026: 9 cảm xúc theo bộ ảnh mới (Vui vẻ, Đau khổ, Lo lắng, Tức giận, Hoảng hốt, Khó chịu, Mệt mỏi, Bình an,
    Cô đơn) + vẫn nhận nhãn cũ "Buồn" (web bản cũ, ghi nguyên chữ); menu cài một lần (onOpen →
    caiDatBangBacSi): tô màu theo mức ĐỎ 1–3 / VÀNG 4–5 / XANH 6–10, tab Tổng hợp, tab Tra cứu, khóa cứng các tab.
+   04/11/2026: tab "Hướng xử trí" (chữ tĩnh, khóa cứng, ngay sau Tra cứu) + cột "Gợi ý mở đầu" (Tổng hợp G, Tra cứu E):
+   bộ đánh giá công thức nhỏ chạy chính công thức ghi vào ô, so với bảng quyết định trong spec (11 dòng + quét mức × thẻ).
    Cuối file: kiểm nhanh google_apps_script-du-an-cu.js (bản cho dự án CŨ) vẫn tắt doGet và nhận app cũ.
    ========================================================= */
 'use strict';
@@ -34,7 +36,7 @@ function parseA1(a1) {
   return m[3] ? [r, c, +m[4] - r + 1, colNum(m[3]) - c + 1] : [r, c, 1, 1];
 }
 function makeSheet(name) {
-  const s = { name, rows: [], frozen: 0, hidden: [], fmt: [], numFmt: [], maxRows: 1000, cfRules: [], protections: [], meta: [], formulas: {}, widths: {}, borders: [], cleared: 0 };
+  const s = { name, rows: [], frozen: 0, hidden: [], fmt: [], numFmt: [], maxRows: 1000, cfRules: [], protections: [], meta: [], formulas: {}, widths: {}, borders: [], cleared: 0, merges: [], wraps: [], valign: [] };
   s.getLastRow = () => s.rows.length;
   s.getMaxRows = () => s.maxRows;
   s.appendRow = r => { s.rows.push(r.slice()); };
@@ -44,7 +46,8 @@ function makeSheet(name) {
   s.setColumnWidth = (c, w) => { s.widths[c] = w; };
   s.inserted = [];
   s.insertRowsAfter = (after, n) => { s.inserted.push(after + '+' + n); s.maxRows += n; return s; };
-  s.clear = () => { s.cleared++; s.rows = []; s.formulas = {}; s.numFmt = []; s.fmt = []; s.borders = []; return s; };
+  /* clear() KHÔNG bỏ ô gộp (giả định khó nhất): script phải tự breakApart trước khi gộp lại */
+  s.clear = () => { s.cleared++; s.rows = []; s.formulas = {}; s.numFmt = []; s.fmt = []; s.borders = []; s.wraps = []; s.valign = []; return s; };
   s.getConditionalFormatRules = () => s.cfRules.slice();
   s.setConditionalFormatRules = rules => { s.cfRules = rules.slice(); };
   s.getDeveloperMetadata = () => s.meta.map(m => ({ getKey: () => m.key, getValue: () => m.value }));
@@ -80,6 +83,12 @@ function makeSheet(name) {
       setFormula(f) { s.formulas[a1 || (r + ',' + c)] = f; return this; },
       setNumberFormat(f) { s.numFmt.push((a1 ? a1 + ',' : '') + r + ',' + c + ',' + (nr || 1) + 'x' + (nc || 1) + '=' + f); return this; },
       setBorder() { s.borders.push(a1); return this; },
+      setWrap(w) { s.wraps.push((a1 || (r + ',' + c + ',' + (nr || 1) + 'x' + (nc || 1))) + '=' + w); return this; },
+      setVerticalAlignment(v) { s.valign.push((a1 || (r + ',' + c + ',' + (nr || 1) + 'x' + (nc || 1))) + '=' + v); return this; },
+      setFontSize(x) { s.fmt.push((a1 ? a1 + ':' : '') + 'size' + x); return this; },
+      /* Như Google: gộp chồng lên ô đã gộp khác → lỗi */
+      merge() { const box = [r, c, nr || 1, nc || 1]; const hit = m => !(m[0] + m[2] - 1 < box[0] || box[0] + box[2] - 1 < m[0] || m[1] + m[3] - 1 < box[1] || box[1] + box[3] - 1 < m[1]); if (s.merges.some(m => hit(m.box))) throw new Error('You must select all cells in a merged range to merge or unmerge them.'); s.merges.push({ a1, box }); return this; },
+      breakApart() { const R = [r, c, nr || 1, nc || 1]; s.merges = s.merges.filter(m => !(m.box[0] >= R[0] && m.box[1] >= R[1] && m.box[0] + m.box[2] <= R[0] + R[2] && m.box[1] + m.box[3] <= R[1] + R[3])); return this; },
       setFontWeight(x) { s.fmt.push(x); return this; }, setBackground(x) { s.fmt.push((a1 ? a1 + ':' : '') + x); return this; }, setFontColor(x) { s.fmt.push(x); return this; }
     };
   };
@@ -108,8 +117,23 @@ function load(opts) {
   /* Locale của file: 'en' (mặc định, =SUM(1,2) ra 3) | 'vi' (=SUM(1,2) hiểu "1,2" là số 1,2 → ra 1,2).
      probeFail: không tạo được tab tạm để thử → script đoán theo getSpreadsheetLocale(). */
   const loc = { locale: o.locale || 'en', probes: [], deleted: [] };
+  /* Thứ tự tab = thứ tự khóa của object sheets; getIndex đếm từ 1 như Google */
+  const withIndex = sh => { if (sh && !sh.getIndex) sh.getIndex = () => Object.keys(sheets).indexOf(sh.name) + 1; return sh; };
+  const moves = [];
   const ss = {
-    getSheetByName: n => sheets[n] || null,
+    getSheetByName: n => withIndex(sheets[n] || null),
+    getSheets: () => Object.keys(sheets).map(n => withIndex(sheets[n])),
+    setActiveSheet: sh => { active = sh; return sh; },
+    /* Như Google: đưa tab ĐANG CHỌN về vị trí pos (đếm từ 1) */
+    moveActiveSheet: pos => {
+      const names = Object.keys(sheets).filter(n => n !== active.name);
+      if (pos < 1 || pos > names.length + 1) throw new Error('mock: vị trí tab lạ ' + pos);
+      names.splice(pos - 1, 0, active.name);
+      const copy = Object.assign({}, sheets);
+      Object.keys(sheets).forEach(n => { delete sheets[n]; });
+      names.forEach(n => { sheets[n] = copy[n]; });
+      moves.push(active.name + '@' + pos);
+    },
     insertSheet: n => {
       if (/^__thu_cu_phap_/.test(n)) {
         loc.probes.push(n);
@@ -119,7 +143,7 @@ function load(opts) {
         sh.getRange = (...a) => { const r = gr(...a); const sf = r.setFormula; r.setFormula = f => { sf.call(r, f); r._f = f; return r; }; r.getValue = () => (sh.formulas.A1 === '=SUM(1,2)' ? (loc.locale === 'vi' ? 1.2 : 3) : ''); return r; };
         return (sheets[n] = sh);
       }
-      return (sheets[n] = makeSheet(n));
+      return withIndex(sheets[n] = makeSheet(n));
     },
     deleteSheet: sh => { loc.deleted.push(sh.name); delete sheets[sh.name]; },
     getSpreadsheetLocale: () => (loc.locale === 'vi' ? 'vi_VN' : 'en_US'),
@@ -155,7 +179,7 @@ function load(opts) {
   if (o.setup) o.setup(sheets, s => { active = s; });
   const P = body => JSON.parse(sandbox.doPost({ postData: { contents: typeof body === 'string' ? body : JSON.stringify(body) } }).getContent());
   const G = p => sandbox.doGet({ parameter: p || {} });
-  return { sandbox, sheets, lock, ui, loc, P, G, setActive: s => { active = s; } };
+  return { sandbox, sheets, lock, ui, loc, moves, P, G, setActive: s => { active = s; } };
 }
 
 const sid = n => 'sess-0000-' + String(n).padStart(4, '0');
@@ -402,12 +426,12 @@ const noFormula = sh => sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(
   /* onOpen: thêm menu "Check-in" trỏ đúng hàm có thật */
   sb.onOpen();
   const menu = env.ui.menus[0] || { items: [] };
-  T('onOpen: thêm menu "Check-in" → "Cài tô màu + Tổng hợp + Tra cứu" gọi caiDatBangBacSi (hàm có thật, tên không kết thúc "_")', menu.name === 'Check-in' && menu.added && menu.items.length === 1 && menu.items[0][0] === 'Cài tô màu + Tổng hợp + Tra cứu' && menu.items[0][1] === 'caiDatBangBacSi' && typeof sb.caiDatBangBacSi === 'function', JSON.stringify(menu));
+  T('onOpen: thêm menu "Check-in" → "Cài bảng bác sĩ (màu, Tổng hợp, Tra cứu, Hướng xử trí)" gọi caiDatBangBacSi (hàm có thật, tên không kết thúc "_")', menu.name === 'Check-in' && menu.added && menu.items.length === 1 && menu.items[0][0] === 'Cài bảng bác sĩ (màu, Tổng hợp, Tra cứu, Hướng xử trí)' && menu.items[0][1] === 'caiDatBangBacSi' && typeof sb.caiDatBangBacSi === 'function', JSON.stringify(menu));
   T('Nguồn: doPost KHÔNG gọi phần cài đặt (không tô màu, không khóa, không tạo tab mỗi lượt)', !/caiDatBangBacSi|applyAlertColors_|lockSheet_|ownTab_|setConditionalFormatRules|protect\(/.test(/function doPost[\s\S]*?\n}/.exec(SRC)[0]));
 
   const res = sb.caiDatBangBacSi();
-  T('Chạy menu: trả kết quả đủ 3 phần, khóa 3 tab', res.checkinRules === 3 && res.summary && res.lookup && JSON.stringify(res.locks) === JSON.stringify(['CheckIn', 'Tổng hợp', 'Tra cứu']), JSON.stringify(res));
-  T('Chạy menu: hộp thoại "Đã cài xong" cho anh', env.ui.alerts.length === 1 && /^Đã cài xong/.test(env.ui.alerts[0]), env.ui.alerts.join(' | '));
+  T('Chạy menu: trả kết quả đủ 4 phần, khóa 4 tab', res.checkinRules === 3 && res.summary && res.lookup && res.guide && JSON.stringify(res.locks) === JSON.stringify(['CheckIn', 'Tổng hợp', 'Tra cứu', 'Hướng xử trí']), JSON.stringify(res));
+  T('Chạy menu: hộp thoại "Đã cài xong" cho anh, nhắc cột Gợi ý mở đầu và tab Hướng xử trí (bản nháp)', env.ui.alerts.length === 1 && /^Đã cài xong/.test(env.ui.alerts[0]) && /tab "Hướng xử trí" \(bản nháp dùng thử 03\/11\/2026/.test(env.ui.alerts[0]) && /Gợi ý mở đầu/.test(env.ui.alerts[0]) && /Đã khóa: CheckIn, Tổng hợp, Tra cứu, Hướng xử trí\./.test(env.ui.alerts[0]), env.ui.alerts.join(' | '));
   T('Chạy menu: chờ khóa LockService và nhả khóa (không chen lúc doPost ghi)', env.lock.waits === 1 && env.lock.held === 0);
   T('Tab CheckIn: KHÔNG đổi dữ liệu, tiêu đề, số cột (không thêm cột F)', JSON.stringify(ck.rows) === dataBefore && ck.rows.every(r => r.length === 5), JSON.stringify(ck.rows[0]));
 
@@ -432,8 +456,8 @@ const noFormula = sh => sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(
   /* b) Tab Tổng hợp */
   const th = env.sheets['Tổng hợp'];
   const thF = th && th.formulas.A2 || '';
-  T('Tổng hợp: tạo tab, gắn dấu ẩn "do menu tạo", tiêu đề 6 cột, đóng băng hàng 1',
-    !!th && th.meta.some(m => m.key === 'checkin_me_bau_tab' && m.value === 'tong_hop') && JSON.stringify(th.rows[0]) === JSON.stringify(['Mã số BN', 'Lượt gần nhất (giờ)', 'Mức gần nhất', 'Cảm xúc gần nhất', 'Số lượt', 'Số lượt ĐỎ trong 14 ngày']) && th.frozen === 1,
+  T('Tổng hợp: tạo tab, gắn dấu ẩn "do menu tạo", tiêu đề 7 cột (G "Gợi ý mở đầu"), đóng băng hàng 1',
+    !!th && th.meta.some(m => m.key === 'checkin_me_bau_tab' && m.value === 'tong_hop') && JSON.stringify(th.rows[0]) === JSON.stringify(['Mã số BN', 'Lượt gần nhất (giờ)', 'Mức gần nhất', 'Cảm xúc gần nhất', 'Số lượt', 'Số lượt ĐỎ trong 14 ngày', 'Gợi ý mở đầu']) && th.frozen === 1,
     th && JSON.stringify(th.rows[0]));
   T('Tổng hợp: A2 là MỘT công thức tự cập nhật đọc tab CheckIn (LET, SORTN giữ lượt mới nhất, QUERY đếm, 14 ngày, mới nhất trên cùng)',
     /^=LET\(/.test(thF) && /'CheckIn'!A2:A/.test(thF) && /'CheckIn'!B2:B/.test(thF) && /SORTN\(SORT\(FILTER\(\{maSo,thoiGian,mucTxt,camXuc,tg\},coMa\),5,FALSE\),9\^9,2,1,TRUE\)/.test(thF) && /NOW\(\)-14/.test(thF) && /\(mucSo>=1\)\*\(mucSo<=3\)/.test(thF) && /group by Col1/.test(thF), thF.slice(0, 200));
@@ -442,7 +466,7 @@ const noFormula = sh => sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(
   T('Tổng hợp: chịu dòng lạ – giờ khác dạng → IFERROR, mức không có số → 0, bảng trống → "Chưa có lượt check-in nào."',
     /ISNUMBER\(thoiGian\)/.test(thF) && /IFERROR\(VALUE\(REGEXEXTRACT\(TO_TEXT\(mucTxt\),"\^\\d\+"\)\),0\)/.test(thF) && /"Chưa có lượt check-in nào\."\)\)$/.test(thF));
   const thCF = th ? th.cfRules : [];
-  T('Tổng hợp: nới 20 000 hàng, tô màu cả dòng A2:F20000 theo "Mức gần nhất" (cột C), cùng 3 màu', th.maxRows === 20000 && thCF.length === 3 && thCF.every((r, i) => r.bg === want[i][0] && JSON.stringify(r.ranges) === '["A2:F20000"]' && r.formula.includes('$C2')), JSON.stringify(thCF.map(r => [r.bg, r.ranges])));
+  T('Tổng hợp: nới 20 000 hàng, tô màu cả dòng A2:G20000 (gồm cột Gợi ý) theo "Mức gần nhất" (cột C), cùng 3 màu', th.maxRows === 20000 && thCF.length === 3 && thCF.every((r, i) => r.bg === want[i][0] && JSON.stringify(r.ranges) === '["A2:G20000"]' && r.formula.includes('$C2')), JSON.stringify(thCF.map(r => [r.bg, r.ranges])));
 
   /* d) Tab Tra cứu */
   const tc = env.sheets['Tra cứu'];
@@ -450,14 +474,49 @@ const noFormula = sh => sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(
   T('Tra cứu: tạo tab có dấu ẩn, A2 "Nhập mã số BN", ô B2 nền vàng nhạt + viền, dạng văn bản @ (giữ số 0 đầu)',
     !!tc && tc.meta.some(m => m.key === 'checkin_me_bau_tab' && m.value === 'tra_cuu') && tc.rows[1] && tc.rows[1][0] === 'Nhập mã số BN' && tc.fmt.includes('B2:#FFF59D') && tc.borders.includes('B2') && tc.numFmt.some(f => f.startsWith('B2,') && f.endsWith('=@')),
     tc && JSON.stringify({ r2: tc.rows[1], fmt: tc.fmt, nf: tc.numFmt }));
-  T('Tra cứu: hàng 5 tiêu đề Thời gian · Mức · Cảm xúc · Cảnh báo', tc && JSON.stringify(tc.rows[4]) === JSON.stringify(['Thời gian', 'Mức', 'Cảm xúc', 'Cảnh báo']), tc && JSON.stringify(tc.rows[4]));
+  T('Tra cứu: hàng 5 tiêu đề Thời gian · Mức · Cảm xúc · Cảnh báo · Gợi ý mở đầu', tc && JSON.stringify(tc.rows[4]) === JSON.stringify(['Thời gian', 'Mức', 'Cảm xúc', 'Cảnh báo', 'Gợi ý mở đầu']), tc && JSON.stringify(tc.rows[4]));
   T('Tra cứu: A6 lọc mọi lượt của mã ở B2 (FILTER maSo=ma), mới nhất trên cùng (SORT theo giờ giảm dần)',
     /^=LET\(ma,REGEXREPLACE\(TO_TEXT\(B2\),"\[\\s\.\\-\]",""\)/.test(tcF) && /SORT\(FILTER\(\{thoiGian,mucTxt,camXuc,canhBao\},maSo=ma\),FILTER\(tg,maSo=ma\),FALSE\)/.test(tcF), tcF.slice(0, 160));
   T('Tra cứu: cột Cảnh báo ĐỎ ≤3 / VÀNG ≤5 / XANH ≤10 theo số mức', /IF\(mucSo<1,"",IF\(mucSo<=3,"ĐỎ",IF\(mucSo<=5,"VÀNG",IF\(mucSo<=10,"XANH",""\)\)\)\)/.test(tcF));
   T('Tra cứu: ô trống → hướng dẫn ngắn; mã sai dạng → nhắc chỉ chữ số; mã không có → "Chưa có lượt check-in nào…" (không #N/A)',
     /IF\(ma="","Gõ mã số bệnh nhân vào ô B2 rồi bấm Enter\."/.test(tcF) && /REGEXMATCH\(ma,"\^\\d\{3,20\}\$"\)/.test(tcF) && /IFERROR\(SORT\([\s\S]*"Chưa có lượt check-in nào với mã số này\."\)\)\)\)$/.test(tcF));
   const tcCF = tc ? tc.cfRules : [];
-  T('Tra cứu: tô màu kết quả A6:D1000 theo cột Mức (B), cùng 3 màu', tcCF.length === 3 && tcCF.every((r, i) => r.bg === want[i][0] && JSON.stringify(r.ranges) === '["A6:D1000"]' && r.formula.includes('$B6')), JSON.stringify(tcCF.map(r => [r.bg, r.ranges])));
+  T('Tra cứu: tô màu kết quả A6:E1000 (gồm cột Gợi ý) theo cột Mức (B), cùng 3 màu', tcCF.length === 3 && tcCF.every((r, i) => r.bg === want[i][0] && JSON.stringify(r.ranges) === '["A6:E1000"]' && r.formula.includes('$B6')), JSON.stringify(tcCF.map(r => [r.bg, r.ranges])));
+  /* Cột "Gợi ý mở đầu" (04/11/2026) */
+  const thG = th && th.formulas.G2 || '', tcE = tc && tc.formulas.E6 || '';
+  T('Tổng hợp: G2 là công thức mảng Gợi ý mở đầu theo C2:C (mức) + D2:D (cảm xúc), = openerFormula_("C2:C","D2:D"); cột G rộng 420, xuống dòng',
+    thG === sb.openerFormula_('C2:C', 'D2:D') && /^=LET\(mucG,ARRAYFORMULA\(IFERROR\(VALUE\(REGEXEXTRACT\(TO_TEXT\(C2:C\)/.test(thG) && /TRIM\(TO_TEXT\(D2:D\)\)/.test(thG) && th.widths[7] === 420 && th.wraps.includes('G1:G20000=true'), thG.slice(0, 120));
+  T('Tra cứu: E6 là công thức mảng Gợi ý mở đầu theo B6:B (mức) + C6:C (cảm xúc); cột E rộng 420, xuống dòng',
+    tcE === sb.openerFormula_('B6:B', 'C6:C') && /TO_TEXT\(B6:B\)/.test(tcE) && /TRIM\(TO_TEXT\(C6:C\)\)/.test(tcE) && tc.widths[5] === 420 && tc.wraps.includes('E5:E1000=true'), tcE.slice(0, 120));
+  T('Tra cứu: A3 thêm câu "Xem tab Hướng xử trí trước khi gọi thai phụ vào."', tc.rows[2] && tc.rows[2][0] === 'Màu theo mức: ĐỎ 1–3 · VÀNG 4–5 · XANH 6–10. Tự đánh giá, không phải thang chẩn đoán. Xem tab Hướng xử trí trước khi gọi thai phụ vào.', tc.rows[2] && tc.rows[2][0]);
+
+  /* Tab Hướng xử trí */
+  const hx = env.sheets['Hướng xử trí'];
+  const hxRow = n => (hx && hx.rows[n - 1]) || [];
+  T('Hướng xử trí: tạo tab, dấu ẩn kind "huong_xu_tri", đứng NGAY SAU tab Tra cứu',
+    !!hx && hx.meta.some(m => m.key === 'checkin_me_bau_tab' && m.value === 'huong_xu_tri') && Object.keys(env.sheets).indexOf('Hướng xử trí') === Object.keys(env.sheets).indexOf('Tra cứu') + 1, JSON.stringify(Object.keys(env.sheets)));
+  T('Hướng xử trí: A1 tiêu đề đậm, A2 trạng thái BẢN NHÁP (chưa ban hành, chưa kiểm định, không thay EPDS)',
+    hxRow(1)[0] === 'HƯỚNG XỬ TRÍ PHIẾU CHECK-IN CẢM XÚC MẸ BẦU THEO 3 MÀU' && hxRow(2)[0] === 'Bản nháp dùng thử, cập nhật 03/11/2026 – chưa ban hành, chưa kiểm định. Phiếu là tự đánh giá, không phải công cụ chẩn đoán, không thay EPDS.' && hx.merges.some(m => m.a1 === 'A2:D2'), JSON.stringify(hxRow(2)));
+  T('Hướng xử trí: A3 cách dùng cho người chỉ xem (tab Tổng hợp, Ctrl+F, cột G); Tra cứu chỉ cho người có quyền sửa',
+    /^Cách dùng: ngay trước khi gọi thai phụ vào, mở tab Tổng hợp, bấm Ctrl\+F gõ mã số BN; cột G là gợi ý mở đầu\. Người có quyền sửa có thể gõ mã ở tab Tra cứu/.test(hxRow(3)[0]) && hx.merges.some(m => m.a1 === 'A3:D3'), hxRow(3)[0]);
+  T('Hướng xử trí: hàng 6 tiêu đề Màu · Khi nào · Bác sĩ tư vấn làm gì · Bước tiếp theo; đủ 4 hàng XANH / VÀNG / ĐỎ / BÁO ĐỘNG',
+    JSON.stringify(hxRow(6)) === JSON.stringify(['Màu', 'Khi nào', 'Bác sĩ tư vấn làm gì', 'Bước tiếp theo']) &&
+    hxRow(7)[0] === 'XANH – Ổn định' && hxRow(8)[0] === 'VÀNG – Hỏi trước khi tư vấn' && hxRow(9)[0] === 'ĐỎ – Đánh giá trong buổi' && hxRow(10)[0] === '⚠ BÁO ĐỘNG – Mọi màu' &&
+    [7, 8, 9, 10].every(n => hxRow(n).length === 4 && hxRow(n).every(c => String(c).length > 0)) && /\n/.test(hxRow(8)[2]) && hxRow(10)[3].includes('[cần xác nhận: số gọi]'), JSON.stringify([7, 8, 9, 10].map(n => hxRow(n)[0])));
+  T('Hướng xử trí: nền hàng 7–9 đúng ALERT_COLORS (xanh/vàng/đỏ nhạt), hàng 10 nền #EA9999 chữ đậm',
+    hx.fmt.includes('A7:D7:#D9EAD3') && hx.fmt.includes('A8:D8:#FFF2CC') && hx.fmt.includes('A9:D9:#F4CCCC') && hx.fmt.includes('A10:D10:#EA9999'), hx.fmt.filter(f => /^A\d+:D\d+:#/.test(f)).join(' '));
+  T('Hướng xử trí: 9 thẻ chia 3 nhánh (hàng 12–17), đủ 9 nhãn EMOTION_LABELS, mỗi nhãn đúng một nhánh',
+    hxRow(12)[0] === '9 thẻ capybara chia 3 nhánh' && JSON.stringify(hxRow(13).slice(0, 3)) === JSON.stringify(['Nhánh', 'Thẻ', 'Làm gì']) &&
+    hxRow(14)[0] === '1. Thẻ dễ chịu' && hxRow(15)[0] === '2. Cần làm dịu trước' && hxRow(16)[0] === '3. Cần kết nối và nâng đỡ' && hxRow(17)[0] === 'Lưu ý' &&
+    (() => { const names = [14, 15, 16].flatMap(n => hxRow(n)[1].split(', ')); return names.length === 9 && JSON.stringify(names.slice().sort()) === JSON.stringify(sb.EMOTION_LABELS.slice().sort()); })(),
+    JSON.stringify([14, 15, 16].map(n => hxRow(n)[1])));
+  T('Hướng xử trí: hàng 19–23 Nên nói / Tránh / Câu tự tạo khoảng cách / Ghi chép / Phiếu gửi ngoài giờ; hàng 25 Căn cứ (chữ xám nhỏ)',
+    ['Nên nói', 'Tránh', 'Câu tự tạo khoảng cách', 'Ghi chép', 'Phiếu gửi ngoài giờ, từ nhà'].every((t, i) => hxRow(19 + i)[0] === t) && /^Căn cứ: /.test(hxRow(25)[0]) && /chưa thẩm định\.$/.test(hxRow(25)[0]) && hx.fmt.includes('#7a636c') && hx.fmt.includes('A25:size9'), JSON.stringify(hxRow(25)[0]).slice(0, 80));
+  T('Hướng xử trí: chữ TĨNH – không công thức, mọi ô dạng văn bản @, không ô nào bắt đầu bằng = + - @',
+    Object.keys(hx.formulas).length === 0 && hx.numFmt.includes('1,1,25x4=@') && noFormula(hx) && hx.rows.length === 25, JSON.stringify({ f: hx.formulas, nf: hx.numFmt }));
+  T('Hướng xử trí: cột A 110 · B 170 · C 470 · D 260, xuống dòng, căn trên', hx.widths[1] === 110 && hx.widths[2] === 170 && hx.widths[3] === 470 && hx.widths[4] === 260 && hx.wraps.includes('1,1,25x4=true') && hx.valign.includes('1,1,25x4=top'), JSON.stringify(hx.widths));
+  T('Hướng xử trí: không chứa dữ liệu bệnh nhân (không mã số, không giờ check-in)', !hx.rows.some(r => r.some(c => /0911111111|0012345|\d{2}:\d{2}:\d{2}/.test(String(c)))));
+
   /* Mô phỏng phần bỏ khoảng trắng/chấm/gạch của ô tra cứu bằng JS (cùng biểu thức) */
   const strip = v => String(v).replace(/[\s.\-]/g, '');
   T('Tra cứu (mô phỏng): "0012 345", "001.2345", "0012-345" → "0012345" (giữ số 0 đầu, khớp đúng chuỗi cột B)', ['0012 345', '001.2345', '0012-345', ' 0012345 '].every(v => strip(v) === '0012345') && strip('012345') !== '0012345');
@@ -473,17 +532,26 @@ const noFormula = sh => sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(
   const pk = pr(ck)[0] || {}, pt = pr(th)[0] || {}, pc = pr(tc)[0] || {};
   T('Khóa: tab CheckIn khóa cứng (không chỉ cảnh báo), chỉ còn chủ file, tắt quyền sửa theo tên miền', pr(ck).length === 1 && pk.warningOnly === false && JSON.stringify(pk.editors) === '["chu-file@vi-du.vn"]' && pk.domainEdit === false, JSON.stringify(pk));
   T('Khóa: tab Tổng hợp khóa cứng, chỉ chủ file', pr(th).length === 1 && pt.warningOnly === false && JSON.stringify(pt.editors) === '["chu-file@vi-du.vn"]' && pt.unprotected.length === 0);
+  const ph = pr(hx)[0] || {};
+  T('Khóa: tab Hướng xử trí khóa cứng, chỉ chủ file, KHÔNG ô nào mở', pr(hx).length === 1 && hx.protections.length === 1 && ph.warningOnly === false && JSON.stringify(ph.editors) === '["chu-file@vi-du.vn"]' && ph.domainEdit === false && ph.unprotected.length === 0, JSON.stringify(ph.unprotected));
   T('Khóa: tab Tra cứu khóa cứng, CHỈ ô B2 để mở', pr(tc).length === 1 && pc.warningOnly === false && JSON.stringify(pc.editors) === '["chu-file@vi-du.vn"]' && JSON.stringify(pc.unprotected) === '["B2"]', JSON.stringify(pc.unprotected));
 
   /* Sau khi khóa, doPost (chạy bằng tài khoản chủ file) vẫn ghi được, không đụng tab khác */
   const r = env.P(Object.assign({}, OK, { sessionId: sid(510), part2: 'Bình an' }));
-  T('Sau khi cài: doPost vẫn ghi vào CheckIn, không đụng Tổng hợp/Tra cứu', r.result === 'success' && ck.rows.length === 4 && ck.rows[3][3] === 'Bình an' && th.rows.length === 1 && Object.keys(th.formulas).join() === 'A2', JSON.stringify(r));
+  T('Sau khi cài: doPost vẫn ghi vào CheckIn, không đụng Tổng hợp/Tra cứu', r.result === 'success' && ck.rows.length === 4 && ck.rows[3][3] === 'Bình an' && th.rows.length === 1 && Object.keys(th.formulas).join() === 'A2,G2', JSON.stringify(r));
 
   /* Chạy lại: kết quả y hệt, không nhân đôi quy tắc/khóa */
+  const hxBefore = JSON.stringify(hx.rows);
   sb.caiDatBangBacSi();
   T('Chạy lại menu: CheckIn vẫn đúng 1 quy tắc anh tự đặt + 3 quy tắc của menu, 1 khóa, không nới thêm hàng', ck.cfRules.length === 4 && ck.cfRules[0] === foreign && pr(ck).length === 1 && ck.maxRows === 20000 && ck.inserted.length === 1, ck.cfRules.length + ' quy tắc, ' + pr(ck).length + ' khóa, ' + ck.maxRows + ' hàng');
-  T('Chạy lại menu: Tổng hợp/Tra cứu dựng lại (xóa rồi ghi), vẫn 3 quy tắc, 1 khóa mỗi tab, công thức không đổi', th.cleared === 1 && tc.cleared === 1 && th.cfRules.length === 3 && tc.cfRules.length === 3 && pr(th).length === 1 && pr(tc).length === 1 && th.formulas.A2 === thF && tc.formulas.A6 === tcF);
+  T('Chạy lại menu: Tổng hợp/Tra cứu dựng lại (xóa rồi ghi), vẫn 3 quy tắc, 1 khóa mỗi tab, công thức không đổi', th.cleared === 1 && tc.cleared === 1 && th.cfRules.length === 3 && tc.cfRules.length === 3 && pr(th).length === 1 && pr(tc).length === 1 && th.formulas.A2 === thF && tc.formulas.A6 === tcF && th.formulas.G2 === thG && tc.formulas.E6 === tcE);
   T('Chạy lại menu: dữ liệu CheckIn vẫn nguyên', ck.rows.length === 4 && ck.rows[1][1] === '0911111111');
+  T('Chạy lại menu: Hướng xử trí dựng lại y hệt – 1 tab, 1 dấu ẩn, 1 khóa, cùng chữ, 10 ô gộp (không gộp chồng), vẫn ngay sau Tra cứu, không dời tab',
+    Object.keys(env.sheets).filter(n => n === 'Hướng xử trí').length === 1 && hx.cleared === 1 && hx.meta.length === 1 && pr(hx).length === 1 &&
+    JSON.stringify(hx.rows) === hxBefore && hx.merges.length === 10 && Object.keys(env.sheets).indexOf('Hướng xử trí') === Object.keys(env.sheets).indexOf('Tra cứu') + 1 && env.moves.length === 0,
+    JSON.stringify({ merges: hx.merges.length, moves: env.moves, tabs: Object.keys(env.sheets) }));
+  sb.caiDatBangBacSi();
+  T('Chạy menu lần 3: vẫn đúng 4 tab (CheckIn + 3 tab của menu, không thêm tab), mỗi tab 1 khóa, quy tắc màu không tăng', Object.keys(env.sheets).length === 4 && ['CheckIn', 'Tổng hợp', 'Tra cứu', 'Hướng xử trí'].every(n => pr(env.sheets[n]).length === 1) && ck.cfRules.length === 4 && th.cfRules.length === 3 && tc.cfRules.length === 3 && hx.cfRules.length === 0 && hx.merges.length === 10, JSON.stringify(Object.keys(env.sheets)));
 }
 
 /* Tab "Tổng hợp"/"Tra cứu" do anh tự tạo (không có dấu ẩn) → không ghi đè; CheckIn đã có khóa riêng của anh → giữ */
@@ -502,7 +570,7 @@ const noFormula = sh => sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(
 {
   const env = load();
   const res = env.sandbox.caiDatBangBacSi();
-  T('Sheet chưa có tab CheckIn: menu tự tạo CheckIn (5 tiêu đề, ẩn E) rồi cài đủ', !!env.sheets.CheckIn && env.sheets.CheckIn.rows[0].join('|') === NEW_HEADER && env.sheets.CheckIn.hidden.includes(5) && res.summary && res.lookup && res.locks.length === 3, JSON.stringify(res));
+  T('Sheet chưa có tab CheckIn: menu tự tạo CheckIn (5 tiêu đề, ẩn E) rồi cài đủ', !!env.sheets.CheckIn && env.sheets.CheckIn.rows[0].join('|') === NEW_HEADER && env.sheets.CheckIn.hidden.includes(5) && res.summary && res.lookup && res.guide && res.locks.length === 4, JSON.stringify(res));
 }
 
 /* Sheet đặt ngôn ngữ Việt: Google có thể trả công thức tô màu với ";" và khoảng trắng → chạy lại menu không nhân đôi (gợi ý 1 review) */
@@ -622,7 +690,217 @@ const noFormula = sh => sh.rows.every(r => r.every(c => !/^[=+\-@]/.test(String(
   T('Chạy lại: dữ liệu CheckIn nguyên vẹn', ck.rows.length === 2 && ck.rows[1][3] === 'Cô đơn');
 }
 T('Nguồn: hướng dẫn ghi rõ file tiếng Việt dùng dấu chấm phẩy ";", chạy lại menu để sửa ô #ERROR!', /file tiếng Việt dùng dấu chấm phẩy ";"/.test(SRC) && /#ERROR!/.test(SRC));
-T('Nguồn: mọi setFormula và quy tắc màu đi qua fx_(…, FORMULA_SEP)', (SRC.match(/\.setFormula\(/g) || []).length === 3 && (SRC.match(/\.setFormula\(fx_\(/g) || []).length === 2 && /setFormula\('=SUM\(1,2\)'\)/.test(SRC) && /alertFormulas_\(levelCell\)\.map\(function \(x\) \{ return fx_\(x, FORMULA_SEP\); \}\)/.test(SRC));
+T('Nguồn: mọi setFormula và quy tắc màu đi qua fx_(…, FORMULA_SEP) (A2, G2 Tổng hợp; A6, E6 Tra cứu; + 1 ô thử cú pháp)', (SRC.match(/\.setFormula\(/g) || []).length === 5 && (SRC.match(/\.setFormula\(fx_\(/g) || []).length === 4 && (SRC.match(/\.setFormula\(fx_\([^;]*, FORMULA_SEP\)\)/g) || []).length === 4 && /setFormula\('=SUM\(1,2\)'\)/.test(SRC) && /alertFormulas_\(levelCell\)\.map\(function \(x\) \{ return fx_\(x, FORMULA_SEP\); \}\)/.test(SRC));
+
+/* ===== Cột "Gợi ý mở đầu" (04/11/2026): mô phỏng bảng quyết định trong docs/specs/checkin-me-bau-huong-xu-tri.md =====
+   Bộ đánh giá công thức nhỏ (chỉ đủ cho các hàm công thức này dùng) chạy CHÍNH chuỗi công thức script ghi vào ô,
+   từng dòng một (ARRAYFORMULA coi như áp cho một ô). So với bảng quyết định viết lại bằng JS ngay dưới (chữ chép từ spec). */
+function evalSheetFormula(formula, cells) {
+  const src = String(formula).replace(/^=/, '');
+  const toks = [];
+  const re = /\s*(?:("(?:[^"]|"")*")|(\d+(?:\.\d+)?)|([A-Za-z_][A-Za-z0-9_]*(?::[A-Za-z]+)?)|(>=|<=|<>|[(),;=<>+\-*\/&^]))/y;
+  let m;
+  re.lastIndex = 0;
+  while (re.lastIndex < src.length && (m = re.exec(src))) {
+    if (m[1] !== undefined) toks.push({ t: 'str', v: m[1].slice(1, -1).replace(/""/g, '"') });
+    else if (m[2] !== undefined) toks.push({ t: 'num', v: Number(m[2]) });
+    else if (m[3] !== undefined) toks.push({ t: 'id', v: m[3] });
+    else toks.push({ t: 'op', v: m[4] });
+  }
+  if (re.lastIndex < src.length && src.slice(re.lastIndex).trim()) throw new Error('evaluator: không đọc được ' + src.slice(re.lastIndex, re.lastIndex + 20));
+  let i = 0;
+  const peek = () => toks[i], eat = v => { const k = toks[i++]; if (v && (!k || k.v !== v)) throw new Error('evaluator: cần ' + v + ' ở ' + i); return k; };
+  const isSep = k => k && k.t === 'op' && (k.v === ',' || k.v === ';');
+  /* Cây cú pháp: thứ tự ưu tiên như Sheets: so sánh < & < + - < * / < ^ */
+  const expr = () => cmp();
+  const bin = (next, ops) => () => { let l = next(); while (peek() && peek().t === 'op' && ops.includes(peek().v)) { const o = eat().v; const r = next(); l = { k: 'bin', o, l, r }; } return l; };
+  const atom = () => {
+    const k = eat();
+    if (k.t === 'str' || k.t === 'num') return { k: 'lit', v: k.v };
+    if (k.t === 'op' && k.v === '(') { const e = expr(); eat(')'); return e; }
+    if (k.t === 'op' && k.v === '-') return { k: 'neg', e: atom() };
+    if (k.t === 'id') {
+      if (peek() && peek().v === '(') { eat('('); const args = []; if (peek().v !== ')') { args.push(expr()); while (isSep(peek())) { eat(); args.push(expr()); } } eat(')'); return { k: 'fn', n: k.v.toUpperCase(), args }; }
+      return { k: 'ref', n: k.v };
+    }
+    throw new Error('evaluator: ký hiệu lạ ' + JSON.stringify(k));
+  };
+  const pow = bin(atom, ['^']), mul = bin(pow, ['*', '/']), add = bin(mul, ['+', '-']), cat = bin(add, ['&']), cmp = bin(cat, ['=', '<>', '>=', '<=', '>', '<']);
+  const tree = expr();
+  if (i !== toks.length) throw new Error('evaluator: thừa ký hiệu ở ' + i);
+  const ERR = { err: true };
+  const num = v => { if (v && v.err) throw v; if (typeof v === 'boolean') return v ? 1 : 0; if (v === '') return 0; if (typeof v === 'number') return v; throw ERR; };
+  const txt = v => { if (v && v.err) throw v; return typeof v === 'boolean' ? (v ? 'TRUE' : 'FALSE') : String(v); };
+  const truthy = v => (typeof v === 'string' ? (v === '' ? false : (() => { throw ERR; })()) : num(v) !== 0);
+  const ev = (n, vars) => {
+    switch (n.k) {
+      case 'lit': return n.v;
+      case 'neg': return -num(ev(n.e, vars));
+      case 'ref': if (n.n in vars) return vars[n.n]; if (n.n in cells) return cells[n.n]; throw new Error('evaluator: tên lạ ' + n.n);
+      case 'bin': {
+        const a = ev(n.l, vars), b = ev(n.r, vars);
+        if (n.o === '&') return txt(a) + txt(b);
+        if (['+', '-', '*', '/', '^'].includes(n.o)) { const x = num(a), y = num(b); return n.o === '+' ? x + y : n.o === '-' ? x - y : n.o === '*' ? x * y : n.o === '/' ? x / y : Math.pow(x, y); }
+        const cmpv = (typeof a === 'string' || typeof b === 'string') ? txt(a).toLowerCase().localeCompare(txt(b).toLowerCase()) : num(a) - num(b);
+        return { '=': cmpv === 0, '<>': cmpv !== 0, '>=': cmpv >= 0, '<=': cmpv <= 0, '>': cmpv > 0, '<': cmpv < 0 }[n.o];
+      }
+      case 'fn': {
+        const A = n.args, e = k => ev(A[k], vars);
+        switch (n.n) {
+          case 'LET': { const v2 = Object.assign({}, vars); for (let j = 0; j + 1 < A.length; j += 2) v2[A[j].n] = (() => { try { return ev(A[j + 1], v2); } catch (x) { if (x === ERR) return ERR; throw x; } })(); return ev(A[A.length - 1], v2); }
+          case 'ARRAYFORMULA': return e(0);
+          case 'IFERROR': try { const v = e(0); if (v && v.err) throw ERR; return v; } catch (x) { if (x === ERR) return e(1); throw x; }
+          case 'IF': return truthy(e(0)) ? e(1) : (A.length > 2 ? e(2) : false);
+          case 'VALUE': { const v = e(0); if (typeof v === 'number') return v; const t = txt(v).trim(); if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t); throw ERR; }
+          case 'TO_TEXT': return txt(e(0));
+          case 'TRIM': return txt(e(0)).trim().replace(/ +/g, ' ');
+          case 'REGEXEXTRACT': { const mm = new RegExp(txt(e(1)), 'u').exec(txt(e(0))); if (!mm) throw ERR; return mm[0]; }
+          case 'REGEXMATCH': return new RegExp(txt(e(1)), 'u').test(txt(e(0)));
+          default: throw new Error('evaluator: chưa hỗ trợ hàm ' + n.n);
+        }
+      }
+    }
+    throw new Error('evaluator: nút lạ');
+  };
+  return ev(tree, {});
+}
+{
+  const env = load();
+  const sb = env.sandbox;
+  /* Bảng quyết định viết lại bằng JS (chữ chép nguyên văn spec) */
+  const SPEC_TEXT = {
+    r_de: 'ĐỎ · Chỗ lệch: chấm thấp mà chọn bé dễ chịu, hỏi nhẹ chỗ chưa khớp. Hỏi câu an toàn, cho làm EPDS.',
+    r_dk: 'ĐỎ · Đồng hành với đau buồn, không dùng kỹ thuật làm dịu lo âu. Hỏi câu an toàn, cho làm EPDS.',
+    r_diu: 'ĐỎ · Làm dịu trước (nói chậm, cho thở) rồi mới hỏi. Hỏi câu an toàn, cho làm EPDS.',
+    r_kn: 'ĐỎ · Kết nối, nâng đỡ: nhóm im lặng, dễ bị bỏ sót. Hỏi câu an toàn, cho làm EPDS.',
+    r_khac: 'ĐỎ · Hỏi cảm xúc trước khi tư vấn. Hỏi câu an toàn, cho làm EPDS.',
+    y_diu: 'VÀNG · 2–3 phút đầu: làm dịu trước (nói chậm, cho thở) rồi hỏi về bé chị chọn.',
+    y_dkkn: 'VÀNG · 2–3 phút đầu: kết nối, nâng đỡ; nhóm này dễ bị bỏ sót vì im lặng.',
+    y_khac: 'VÀNG · 2–3 phút đầu: hỏi cảm xúc trước khi đưa thông tin chuyên môn.',
+    g_khac: 'XANH · Tư vấn như thường lệ.',
+    g_con: 'XANH · Hỏi đúng một câu về bé chị chọn rồi đi tiếp.'
+  };
+  const GROUP = { 'Vui vẻ': 'de', 'Bình an': 'de', 'Hoảng hốt': 'diu', 'Tức giận': 'diu', 'Lo lắng': 'diu', 'Khó chịu': 'diu', 'Đau khổ': 'dk', 'Cô đơn': 'kn', 'Mệt mỏi': 'kn', 'Buồn': 'kn' };
+  const specOpener = (lv, card) => {
+    const mm = /^\d+/.exec(String(lv)); const n = mm ? Number(mm[0]) : 0;
+    const g = GROUP[String(card).trim().replace(/ +/g, ' ')] || 'khac';
+    if (n >= 1 && n <= 3) return SPEC_TEXT['r_' + g];
+    if (n >= 4 && n <= 5) return g === 'diu' ? SPEC_TEXT.y_diu : (g === 'dk' || g === 'kn') ? SPEC_TEXT.y_dkkn : SPEC_TEXT.y_khac;
+    if (n >= 6 && n <= 10) return g === 'de' || g === 'khac' ? SPEC_TEXT.g_khac : SPEC_TEXT.g_con;
+    return '';
+  };
+  const fEn = sb.openerFormula_('C2:C', 'D2:D'), fVi = sb.fx_(fEn, ';');
+  const run = (f, lv, card) => { try { return evalSheetFormula(f, { 'C2:C': lv, 'D2:D': card }); } catch (e) { return 'LỖI: ' + e.message; } };
+  /* 11 dòng của bảng quyết định (mỗi dòng một mẫu tiêu biểu), kể cả "Buồn", thẻ lạ, mức lạ */
+  const eleven = [
+    ['1–3 · Dễ chịu', '2 - Rất tồi tệ', 'Vui vẻ', SPEC_TEXT.r_de],
+    ['1–3 · Đau khổ', '1 - Tuyệt vọng', 'Đau khổ', SPEC_TEXT.r_dk],
+    ['1–3 · Làm dịu trước', '3 - Tồi tệ', 'Hoảng hốt', SPEC_TEXT.r_diu],
+    ['1–3 · Kết nối ("Buồn", nhãn cũ)', '3 - Tồi tệ', 'Buồn', SPEC_TEXT.r_kn],
+    ['1–3 · khác (thẻ lạ "Bình yên")', '2 - Rất tồi tệ', 'Bình yên', SPEC_TEXT.r_khac],
+    ['4–5 · Làm dịu trước', '4 - Kém', 'Lo lắng', SPEC_TEXT.y_diu],
+    ['4–5 · Đau khổ hoặc Kết nối', '5 - Bình thường (Ổn)', 'Cô đơn', SPEC_TEXT.y_dkkn],
+    ['4–5 · Dễ chịu hoặc khác (thẻ trống)', '5 - Bình thường (Ổn)', '', SPEC_TEXT.y_khac],
+    ['6–10 · Dễ chịu hoặc khác', '10 - Rất tuyệt vời', 'Bình an', SPEC_TEXT.g_khac],
+    ['6–10 · còn lại', '7 - Tốt', 'Mệt mỏi', SPEC_TEXT.g_con],
+    ['mức lạ ("Bình thường", không số) → trống', 'Bình thường', 'Lo lắng', '']
+  ];
+  const bad11 = eleven.filter(([, lv, card, want]) => run(fEn, lv, card) !== want || run(fVi, lv, card) !== want || specOpener(lv, card) !== want);
+  T('Gợi ý mở đầu: 11 dòng bảng quyết định ra đúng chữ spec (chạy chính công thức, bản "," và bản ";")', bad11.length === 0, bad11.map(b => b[0] + ' → ' + run(fEn, b[1], b[2])).join(' | '));
+  /* Quét đủ: 10 mức × (9 thẻ + "Buồn" + trống + thẻ lạ + thẻ có khoảng trắng thừa + chữ thường) và các mức lạ */
+  const cards = sb.EMOTION_LABELS.concat(['Buồn', '', 'Bình yên', 'Tủi thân, cô đơn', '  Lo lắng  ', 'Cô  đơn', 'vui vẻ', '=1+1']);
+  /* Ô cột C như doPost ghi: "7 - Tốt" (server ghép số + nhãn LEVEL_TEXTS); thêm nhãn trần không số và dòng lạ */
+  const levelCells = sb.LEVEL_TEXTS.slice(1).map((t, k) => (k + 1) + ' - ' + t);
+  const levels = levelCells.concat(sb.LEVEL_TEXTS.slice(1), ['', 'Bình thường', '0 - lạ', '11 - lạ', '7', ' 7 - Tốt', '-3 - âm', 'abc']);
+  const grid = [];
+  levels.forEach(lv => cards.forEach(card => grid.push([lv, card])));
+  const badGrid = grid.filter(([lv, card]) => run(fEn, lv, card) !== specOpener(lv, card) || run(fVi, lv, card) !== specOpener(lv, card));
+  T('Gợi ý mở đầu: quét ' + grid.length + ' cặp (mức × thẻ, kể cả dòng lạ) – công thức khớp bảng quyết định JS, không ô nào lỗi', badGrid.length === 0, badGrid.slice(0, 5).map(([lv, c]) => JSON.stringify([lv, c]) + ' → ' + run(fEn, lv, c) + ' (cần ' + specOpener(lv, c) + ')').join(' | '));
+  T('Gợi ý mở đầu: mức lạ (trống, không số, 0, 11, có khoảng trắng đầu) → ô trống, không lỗi', ['', 'Bình thường', '0 - lạ', '11 - lạ', ' 7 - Tốt', 'abc'].every(lv => run(fEn, lv, 'Lo lắng') === '' && run(fVi, lv, 'Vui vẻ') === ''));
+  T('Gợi ý mở đầu: chữ đầu khớp màu tô của dòng (ĐỎ 1–3 · VÀNG 4–5 · XANH 6–10), mọi thẻ', cards.every(c => levelCells.every((lv, k) => { const out = run(fEn, lv, c); return out.startsWith(k + 1 <= 3 ? 'ĐỎ · ' : k + 1 <= 5 ? 'VÀNG · ' : 'XANH · '); })) && grid.filter(([lv]) => levelCells.includes(lv)).length === 10 * cards.length && levelCells.every((lv, k) => run(fEn, lv, 'Cô đơn').startsWith(k + 1 <= 3 ? 'ĐỎ · ' : k + 1 <= 5 ? 'VÀNG · ' : 'XANH · ')));
+  /* Nhóm thẻ trong code: đúng 9 nhãn + "Buồn", mỗi nhãn đúng một nhóm, chữ y hệt EMOTION_LABELS (cùng dạng Unicode) */
+  const inCode = sb.CARD_GROUPS.flatMap(g => g.cards);
+  T('CARD_GROUPS: 4 nhóm phủ đúng 9 nhãn EMOTION_LABELS + "Buồn" (LEGACY), không trùng, không ký tự regex đặc biệt',
+    sb.CARD_GROUPS.length === 4 && inCode.length === 10 && new Set(inCode).size === 10 && JSON.stringify(inCode.slice().sort()) === JSON.stringify(sb.EMOTION_LABELS.concat(sb.LEGACY_EMOTION_LABELS).slice().sort()) && inCode.every(c => !/[\\^$.|?*+()[\]{}]/.test(c) && c === c.normalize('NFC')), JSON.stringify(inCode));
+  /* fx_ (;): không "," lọt ra ngoài chuỗi; chữ trong "…" (có dấu phẩy, dấu chấm, ngoặc, "2–3") giữ nguyên từng ký tự */
+  const outside = f => String(f).replace(/"(?:[^"]|"")*"|'(?:[^']|'')*'/g, '');
+  const strs = f => (String(f).match(/"(?:[^"]|"")*"/g) || []);
+  T('fx_(Gợi ý mở đầu, ";"): không còn "," ngoài chuỗi, có ";" ngăn tham số, mọi chuỗi giữ nguyên (dấu phẩy, dấu chấm, ngoặc trong chữ)',
+    !/,/.test(outside(fVi)) && /;/.test(outside(fVi)) && JSON.stringify(strs(fVi)) === JSON.stringify(strs(fEn)) && strs(fEn).length === 16 && fVi.includes('"ĐỎ · Làm dịu trước (nói chậm, cho thở) rồi mới hỏi. Hỏi câu an toàn, cho làm EPDS."') && !/\\/.test(outside(fVi)), outside(fVi).slice(0, 160));
+  T('Gợi ý mở đầu: tên biến LET (mucG, theG, nhomG) không giống địa chỉ ô, chỉ hàm có sẵn trong Sheets', /^=LET\(mucG,/.test(fEn) && /,theG,/.test(fEn) && /,nhomG,/.test(fEn) && [...new Set(outside(fEn).match(/[A-Z_]+(?=\()/g))].every(f => ['LET', 'ARRAYFORMULA', 'IFERROR', 'VALUE', 'REGEXEXTRACT', 'TO_TEXT', 'TRIM', 'IF', 'REGEXMATCH'].includes(f)));
+  T('Gợi ý mở đầu: số ngoặc ( ) không đổi sau fx_', ['(', ')'].every(c => outside(fEn).split(c).length === outside(fVi).split(c).length));
+}
+
+/* vi_VN: G2 / E6 ghi bản ";" */
+{
+  const env = load({ locale: 'vi' });
+  const outside = f => String(f).replace(/"(?:[^"]|"")*"|'(?:[^']|'')*'/g, '');
+  env.sandbox.caiDatBangBacSi();
+  const th = env.sheets['Tổng hợp'], tc = env.sheets['Tra cứu'];
+  T('vi_VN: Tổng hợp!G2 và Tra cứu!E6 = fx_(openerFormula_, ";"), không còn "," ngoài chuỗi, mở đầu =LET(mucG;',
+    th.formulas.G2 === env.sandbox.fx_(env.sandbox.openerFormula_('C2:C', 'D2:D'), ';') && tc.formulas.E6 === env.sandbox.fx_(env.sandbox.openerFormula_('B6:B', 'C6:C'), ';') && !/,/.test(outside(th.formulas.G2)) && !/,/.test(outside(tc.formulas.E6)) && /^=LET\(mucG;ARRAYFORMULA\(/.test(th.formulas.G2), th.formulas.G2.slice(0, 80));
+  T('vi_VN: Tổng hợp/Tra cứu mỗi tab 3 quy tắc ";" trên vùng nới A2:G20000 / A6:E1000; tab Hướng xử trí không quy tắc màu',
+    th.cfRules.length === 3 && tc.cfRules.length === 3 && th.cfRules.every(r => JSON.stringify(r.ranges) === '["A2:G20000"]' && !/,/.test(outside(r.formula))) && tc.cfRules.every(r => JSON.stringify(r.ranges) === '["A6:E1000"]') && env.sheets['Hướng xử trí'].cfRules.length === 0);
+}
+
+/* Sheet đã chạy menu bản 02/11 (Tổng hợp A–F, Tra cứu A–D, chưa có Hướng xử trí): chạy menu mới → nới vùng màu, thay quy tắc cũ, không nhân đôi */
+{
+  const env = load({ localizeCF: true });
+  const sb = env.sandbox;
+  const ck = env.sheets.CheckIn = makeSheet('CheckIn');
+  ck.rows.push(NEW_HEADER.split('|'));
+  sb.caiDatBangBacSi();
+  const th = env.sheets['Tổng hợp'], tc = env.sheets['Tra cứu'];
+  /* Giả lập trạng thái bản cũ: quy tắc màu của menu trên vùng hẹp, chưa có tab Hướng xử trí */
+  th.cfRules = sb.alertRules_(th, 'A2:F20000', '$C2');
+  tc.cfRules = sb.alertRules_(tc, 'A6:D1000', '$B6');
+  delete env.sheets['Hướng xử trí'];
+  T('(chuẩn bị) quy tắc bản cũ được isOurRule_ nhận là của menu (vùng hẹp không ảnh hưởng)', th.cfRules.every(r => sb.isOurRule_(r, '$C2')) && tc.cfRules.every(r => sb.isOurRule_(r, '$B6')));
+  const res = sb.caiDatBangBacSi();
+  T('Nâng cấp từ bản 02/11: Tổng hợp còn đúng 3 quy tắc trên A2:G20000, Tra cứu 3 quy tắc trên A6:E1000 (không thành 6)',
+    th.cfRules.length === 3 && th.cfRules.every(r => JSON.stringify(r.ranges) === '["A2:G20000"]') && tc.cfRules.length === 3 && tc.cfRules.every(r => JSON.stringify(r.ranges) === '["A6:E1000"]'), JSON.stringify([th.cfRules.map(r => r.ranges), tc.cfRules.map(r => r.ranges)]));
+  T('Nâng cấp từ bản 02/11: tạo tab Hướng xử trí ngay sau Tra cứu, khóa 4 tab', res.guide && Object.keys(env.sheets).join('|') === 'CheckIn|Tổng hợp|Tra cứu|Hướng xử trí' && res.locks.length === 4, Object.keys(env.sheets).join('|'));
+}
+
+/* Thứ tự tab: Hướng xử trí luôn về NGAY SAU Tra cứu (dù đang đứng trước hay cách xa); tab khác giữ thứ tự */
+{
+  const env = load();
+  const sb = env.sandbox;
+  env.sheets.CheckIn = makeSheet('CheckIn');
+  env.sheets.CheckIn.rows.push(NEW_HEADER.split('|'));
+  sb.caiDatBangBacSi();
+  /* Anh lỡ xóa tab Tra cứu rồi chạy lại menu: Tra cứu mới tạo ở cuối, sau Hướng xử trí */
+  delete env.sheets['Tra cứu'];
+  env.sheets['Ghi chú của anh'] = makeSheet('Ghi chú của anh');
+  sb.caiDatBangBacSi();
+  const order1 = Object.keys(env.sheets).join('|');
+  T('Hướng xử trí đứng TRƯỚC Tra cứu (Tra cứu tạo lại ở cuối) → chạy menu dời về ngay sau Tra cứu', order1 === 'CheckIn|Tổng hợp|Ghi chú của anh|Tra cứu|Hướng xử trí', order1 + ' moves=' + env.moves.join(','));
+  /* Hướng xử trí cách xa phía sau */
+  const keys = Object.keys(env.sheets), copy = Object.assign({}, env.sheets);
+  keys.forEach(n => { delete env.sheets[n]; });
+  ['Tra cứu', 'CheckIn', 'Ghi chú của anh', 'Tổng hợp', 'Hướng xử trí'].forEach(n => { env.sheets[n] = copy[n]; });
+  sb.caiDatBangBacSi();
+  const order2 = Object.keys(env.sheets).join('|');
+  T('Hướng xử trí cách xa sau Tra cứu → dời về ngay sau Tra cứu, tab khác giữ thứ tự', order2 === 'Tra cứu|Hướng xử trí|CheckIn|Ghi chú của anh|Tổng hợp', order2);
+  const n0 = env.moves.length;
+  sb.caiDatBangBacSi();
+  T('Đã đúng chỗ thì chạy lại không dời tab nữa', env.moves.length === n0 && Object.keys(env.sheets).join('|') === order2, env.moves.join(','));
+}
+
+/* Tab "Hướng xử trí" anh tự tạo (không dấu ẩn) → không ghi đè, không khóa, không dời */
+{
+  const env = load();
+  const mine = env.sheets['Hướng xử trí'] = makeSheet('Hướng xử trí');
+  mine.rows.push(['Bản anh tự viết']);
+  const res = env.sandbox.caiDatBangBacSi();
+  T('Tab "Hướng xử trí" anh tự tạo: KHÔNG ghi đè, không khóa, không dời, hộp thoại báo đổi tên; tab khác vẫn cài đủ',
+    !res.guide && res.summary && res.lookup && mine.rows.length === 1 && mine.rows[0][0] === 'Bản anh tự viết' && mine.cleared === 0 && mine.protections.length === 0 && env.moves.length === 0 &&
+    /Tab "Hướng xử trí" có sẵn do anh tự tạo/.test(env.ui.alerts[0] || '') && JSON.stringify(res.locks) === JSON.stringify(['CheckIn', 'Tổng hợp', 'Tra cứu']), JSON.stringify(res));
+}
+
+/* Nguồn: phần sửa chỉ ở menu, doPost không đổi */
+T('Nguồn: doPost / validate không nhắc tới Gợi ý mở đầu hay Hướng xử trí', !/openerFormula_|GUIDE_|Hướng xử trí|buildGuide_/.test(/function doPost[\s\S]*?\n}/.exec(SRC)[0] + (/function validateCheckin_[\s\S]*?\n}/.exec(SRC) || [''])[0]));
+T('Nguồn: hướng dẫn cài nhắc tên menu mới và tab Hướng xử trí', /Check-in → Cài bảng bác sĩ \(màu, Tổng hợp, Tra cứu, Hướng xử trí\)/.test(SRC) && /tab "Hướng xử trí" đứng ngay sau tab Tra cứu/.test(SRC));
 
 /* ===== Nhãn khớp với script.js ===== */
 {
