@@ -5,10 +5,10 @@
 // URL Apps Script nhận dữ liệu. Anh dán URL của bản triển khai MỚI vào đây (URL cũ đã lộ, xem google_apps_script.js).
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzfN8ZHtoY_-if6-aPzziEuSQ8HRKxoH74F967-9Rxk0c5_UZPAIJDVdQjr51RRME9G/exec';
 
-// Số hỗ trợ của cơ sở: ĐỂ TRỐNG cho tới khi anh Thông xác nhận số thật (không tự bịa).
-// Ví dụ khi có: SUPPORT_NAME = 'Phòng khám thai'; SUPPORT_PHONE = '0xxx xxx xxx';
-const SUPPORT_NAME = '';
-const SUPPORT_PHONE = '';
+// Số hỗ trợ của khoa: anh Thông xác nhận 04/11/2026 (số của BS Thông).
+// Để trống SUPPORT_PHONE thì dòng này ẩn, chỉ còn số 115.
+const SUPPORT_NAME = 'BS Thông';
+const SUPPORT_PHONE = '0903 194 666';
 
 // Gửi quá thời gian này (ms) thì bỏ, giữ lượt trong hàng chờ để gửi lại sau
 let SEND_TIMEOUT_MS = 15000;

@@ -430,7 +430,7 @@ async function scenarioMain() {
     T('Cảm ơn: tóm tắt che mã số "26 ••• 345", có "3 - Tồi tệ", "Lo lắng"', /Mã số bệnh nhân: 26 ••• 345/.test(sum) && !/26012345/.test(sum) && !/điện thoại/.test(sum) && /Mức cảm xúc: 3 - Tồi tệ/.test(sum) && /Bé Capybara: Lo lắng/.test(sum), sum);
     const quote3 = await text(page, '#success-quote');
     T('Cảm ơn: mức 3 → câu vỗ về nhẹ, KHÔNG chúc "nhiều niềm vui và hạnh phúc"', /nặng lòng/.test(quote3) && !/niềm vui|hạnh phúc/.test(quote3), quote3);
-    T('Cảm ơn: mức 3 → khung "Hỗ trợ" tự mở, có 115, không có số cơ sở bịa', (await page.evaluate("(() => { const d = document.getElementById('support-box'); return d.open && d.innerText.includes('115') && document.getElementById('support-facility').hidden; })()")));
+    T('Cảm ơn: mức 3 → khung "Hỗ trợ" tự mở, có 115 và số BS Thông bấm gọi được', (await page.evaluate("(() => { const d = document.getElementById('support-box'); const f = document.getElementById('support-facility'); const a = f.querySelector('a.support-tel'); return d.open && d.innerText.includes('115') && !f.hidden && f.textContent === 'BS Thông: 0903 194 666' && a && a.getAttribute('href') === 'tel:0903194666'; })()")));
     T('Cảm ơn: pháo hoa vẫn bắn (giữ nguyên theo anh)', (await page.evaluate("typeof particles !== 'undefined'")) && s.successShownAt > 0);
     T('Cảm ơn: nút "🌸 Thực hiện check-in khác" (giữ nguyên chờ anh)', (await text(page, '.btn-restart')) === TXT.restart, await text(page, '.btn-restart'));
     FLAKY('Cảm ơn: cuộn lên đầu trang (scrollTo smooth, chờ ≤ 1,5 s; headless không đảm bảo frame)', !!(await waitFor(page, 'scrollY < 5', 1500)), await page.evaluate('scrollY'));
@@ -606,8 +606,9 @@ async function scenarioShuffle() {
     e = await setup({ query: '?qaseed=7', height: 900 });
     const { page } = e;
     const order = () => page.evaluate("[...document.querySelectorAll('.capy-card')].map(c => c.dataset.emotion)");
-    /* Thứ tự nhìn thấy (trên → dưới, trái → phải) */
-    const visual = () => page.evaluate("[...document.querySelectorAll('.capy-card')].map(c => ({ n: c.dataset.emotion, r: c.getBoundingClientRect() })).sort((a, b) => (Math.round(a.r.top) - Math.round(b.r.top)) || (a.r.left - b.r.left)).map(x => x.n)");
+    /* Thứ tự nhìn thấy (trên → dưới, trái → phải). Cùng hàng nếu lệch dưới 20 px:
+       thẻ dưới con trỏ chuột nhô lên ~1 px (hiệu ứng rê chuột), không phải đổi hàng. */
+    const visual = () => page.evaluate("[...document.querySelectorAll('.capy-card')].map(c => ({ n: c.dataset.emotion, r: c.getBoundingClientRect() })).sort((a, b) => (Math.abs(a.r.top - b.r.top) >= 20 ? a.r.top - b.r.top : 0) || (a.r.left - b.r.left)).map(x => x.n)");
     const o1 = await order();
     T('Mở trang (seed 7): đủ 9 thẻ, mỗi nhãn đúng 1 lần, đã dùng crypto.getRandomValues', o1.length === 9 && JSON.stringify(o1.slice().sort()) === JSON.stringify(CARDS.slice().sort()) && (await page.evaluate('__qa.rng')) >= 8, o1.join(' | '));
     T('Thứ tự đã xáo (khác thứ tự gốc trong HTML)', JSON.stringify(o1) !== JSON.stringify(CARDS), o1.join(' | '));
@@ -625,7 +626,7 @@ async function scenarioShuffle() {
     await restart(page);
     const o2 = await order();
     T('Bấm "Thực hiện check-in khác" → thứ tự mới (khác lượt trước), vẫn đủ 9 nhãn', JSON.stringify(o2) !== JSON.stringify(o1) && JSON.stringify(o2.slice().sort()) === JSON.stringify(CARDS.slice().sort()), o2.join(' | '));
-    T('… DOM = nhìn thấy sau khi xáo lại', JSON.stringify(await visual()) === JSON.stringify(o2));
+    T('… DOM = nhìn thấy sau khi xáo lại', JSON.stringify(await visual()) === JSON.stringify(o2), JSON.stringify(await page.evaluate("[...document.querySelectorAll('.capy-card')].map(c => { const r = c.getBoundingClientRect(); return c.dataset.emotion + '@' + r.top.toFixed(1) + ',' + r.left.toFixed(1); })")));
     T('Không lưu thứ tự vào máy (localStorage không có khóa nào của app sau khi gửi xong)', (await page.evaluate('localStorage.length')) === 0, await page.evaluate('JSON.stringify(Object.keys(localStorage))'));
     /* Nạp lại cùng seed → đúng thứ tự lần đầu (xáo bằng getRandomValues, tái lập được); seed khác → thứ tự khác */
     await page.navigate('about:blank');

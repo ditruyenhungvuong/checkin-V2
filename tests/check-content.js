@@ -203,7 +203,7 @@ T('Cỡ S: có dòng "không phải chẩn đoán" / "tự đánh giá"', /chẩ
 T('Mục 3: styles.css có @media (prefers-reduced-motion)', /prefers-reduced-motion/.test(css));
 T('Mục 3: ảnh lỗi tự thay emoji (onerror/fallback)', /addEventListener\('error'/.test(js) && /fallback/.test(js) && /data-emoji="/.test(html) && /id="current-capy-emoji"/.test(html));
 T('Mục 3: có nút/đường "Hỗ trợ"', /<summary[^>]*>[^<]*Hỗ trợ/.test(htmlNoComment));
-T('Hỗ trợ: số cơ sở để trống trong config (không bịa), có 115', /const SUPPORT_PHONE = '';/.test(js) && /tel:115/.test(html));
+T('Hỗ trợ: số khoa đúng số anh Thông xác nhận 04/11 (BS Thông 0903 194 666), có 115', /const SUPPORT_NAME = 'BS Thông';/.test(js) && /const SUPPORT_PHONE = '0903 194 666';/.test(js) && /tel:115/.test(html));
 T('Mục 3: favicon (không 404 favicon.ico)', /<link rel="icon" href="data:image\/svg\+xml/.test(html));
 T('Mục 3: nhạc không tự phát, không tải trước (preload="none", không phát ở lần chạm đầu)', /<audio id="bg-music" loop preload="none">/.test(html) && !/once:\s*true/.test(js) && !/startBgMusic/.test(js) && !/autoplay/.test(html));
 T('Nút nhạc: nhãn cố định "Nhạc nền", chỉ đổi aria-pressed (không đổi aria-label)', /id="music-toggle-btn"[^>]*aria-pressed="false"[^>]*aria-label="Nhạc nền"/.test(html) && /setAttribute\('aria-pressed'/.test(jsCode) && !/setAttribute\('aria-label'/.test(jsCode));
