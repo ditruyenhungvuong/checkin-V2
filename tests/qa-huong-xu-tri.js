@@ -60,7 +60,7 @@ T('Tab Hướng xử trí: độ rộng A 110 · B 170 · C 470 · D 260', JSON.
 T('Tab Hướng xử trí: mỗi ô < 50 000 ký tự (dài nhất ' + Math.max(...G.GUIDE_ROWS.flat().map(c => c.length)) + ')', G.GUIDE_ROWS.flat().every(c => c.length < 50000));
 const README = fs.readFileSync(path.join(APP, 'README.md'), 'utf8');
 T('README: ghi tên menu mới, không còn tên cũ, có nhắc tab Hướng xử trí (bản nháp) và cột Gợi ý mở đầu (G / E)',
-  README.includes('"' + G.MENU_ITEM + '"') && !README.includes('Cài tô màu + Tổng hợp + Tra cứu') && /tab \*\*Hướng xử trí\*\*/.test(README) && /bản nháp dùng thử 0\.3 · 04\/11\/2026/.test(README) && /Gợi ý mở đầu\*\* \(Tổng hợp cột G, Tra cứu cột E/.test(README));
+  README.includes('"' + G.MENU_ITEM + '"') && !README.includes('Cài tô màu + Tổng hợp + Tra cứu') && /tab \*\*Hướng xử trí\*\*/.test(README) && /bản nháp dùng thử 0\.4 · 04\/11\/2026/.test(README) && /Gợi ý mở đầu\*\* \(Tổng hợp cột G, Tra cứu cột E/.test(README));
 T('Tên menu đúng spec', G.MENU_ITEM === 'Cài bảng bác sĩ (màu, Tổng hợp, Tra cứu, Hướng xử trí)' && G.GUIDE_SHEET === 'Hướng xử trí');
 
 /* ===== 2. Bảng quyết định: lấy từ spec ===== */

@@ -25,7 +25,7 @@
  *               - cột "Gợi ý mở đầu" (Tổng hợp cột G, Tra cứu cột E): một câu gợi ý theo màu của mức
  *                 và nhóm thẻ capybara (04/11/2026)
  *               - tab "Hướng xử trí" (ngay sau Tra cứu): bảng 3 màu + BÁO ĐỘNG, 9 thẻ chia 3 nhánh, câu nên
- *                 nói/tránh. Bản nháp dùng thử 0.3 · 04/11/2026, chưa ban hành, chưa kiểm định.
+ *                 nói/tránh. Bản nháp dùng thử 0.4 · 04/11/2026, chưa ban hành, chưa kiểm định.
  *               - khóa (bảo vệ) cả bốn tab, chỉ chủ file sửa được; riêng ô B2 của tab Tra cứu để mở
  *             doPost KHÔNG chạy phần này (mỗi lượt check-in chỉ ghi một dòng).
  *
@@ -692,7 +692,7 @@ function lookupFormula_() {
 
 /* ===== Cột "Gợi ý mở đầu" (04/11/2026, anh duyệt theo docs/specs/checkin-me-bau-huong-xu-tri.md) =====
  * Màu theo MỨC quyết định dành bao nhiêu thời gian; nhóm THẺ quyết định nói câu gì.
- * Chữ lấy nguyên văn bảng quyết định trong spec (tờ quy trình bản nháp 0.3 · 04/11/2026), KHÔNG tự thêm ý.
+ * Chữ lấy nguyên văn bảng quyết định trong spec (tờ quy trình bản nháp 0.4 · 04/11/2026), KHÔNG tự thêm ý.
  * Thẻ so khớp NGUYÊN CHUỖI sau TRIM (phân biệt hoa thường); thẻ khác hoặc trống coi như không có thẻ.
  */
 var CARD_GROUPS = [
@@ -747,7 +747,7 @@ function openerFormula_(lv, cv) {
       '"")))))';
 }
 
-/* ===== Tab "Hướng xử trí": nội dung TĨNH, chữ nguyên văn spec 04/11/2026 (bản nháp dùng thử 0.3 · 04/11/2026; 3 ô chờ điền theo anh 04/11) =====
+/* ===== Tab "Hướng xử trí": nội dung TĨNH, chữ nguyên văn spec 04/11/2026 (bản nháp dùng thử 0.4 · 04/11/2026; 3 ô chờ điền theo anh 04/11) =====
  * Không công thức, không dữ liệu bệnh nhân. Khóa cứng cả tab, không ô nào mở.
  * Mỗi hàng 4 ô A–D ("·" trong spec = sang cột). "\n" = xuống dòng trong ô.
  * Chỉ sửa chữ trong ô, KHÔNG thêm/bớt hàng (ô gộp và màu gắn theo số hàng: buildGuide_ gộp A1–A4, A12,
@@ -755,7 +755,7 @@ function openerFormula_(lv, cv) {
  */
 var GUIDE_ROWS = [
   /* 1 */ ['HƯỚNG XỬ TRÍ PHIẾU CHECK-IN CẢM XÚC MẸ BẦU THEO 3 MÀU', '', '', ''],
-  /* 2 */ ['Bản nháp dùng thử 0.3, cập nhật 04/11/2026 – chưa ban hành, chưa kiểm định. Phiếu là tự đánh giá, không phải công cụ chẩn đoán, không thay EPDS.', '', '', ''],
+  /* 2 */ ['Bản nháp dùng thử 0.4, cập nhật 04/11/2026 – chưa ban hành, chưa kiểm định. Phiếu là tự đánh giá, không phải công cụ chẩn đoán, không thay EPDS.', '', '', ''],
   /* 3 */ ['Cách dùng: ngay trước khi gọi thai phụ vào, mở tab Tổng hợp, bấm Ctrl+F gõ mã số BN; cột G là gợi ý mở đầu. Người có quyền sửa có thể gõ mã ở tab Tra cứu để xem mọi lượt. Màu theo mức quyết định dành bao nhiêu thời gian; thẻ capybara quyết định nói câu gì. Thẻ không tham gia xếp màu.', '', '', ''],
   /* 4 */ ['Lượt trước 02/11/2026: app cũ để sẵn mức 5, nên mức 5 của lượt cũ có thể là mặc định, hỏi lại bằng lời. Từ 02/11 thai phụ phải tự chạm chọn mức. Thẻ "Buồn" (trước 02/11) nay là "Đau khổ".', '', '', ''],
   /* 5 */ ['', '', '', ''],
@@ -944,7 +944,7 @@ function caiDatBangBacSi() {
     say_('Đã cài xong: tô màu tab ' + SHEET_NAME +
          (res.summary ? ', tab "' + SUMMARY_SHEET + '" (có cột Gợi ý mở đầu)' : '') +
          (res.lookup ? ', tab "' + LOOKUP_SHEET + '" (gõ mã ở ô ' + LOOKUP_INPUT + ', có cột Gợi ý mở đầu)' : '') +
-         (res.guide ? ', tab "' + GUIDE_SHEET + '" (bản nháp dùng thử 0.3 · 04/11/2026, đọc trước khi tư vấn)' : '') +
+         (res.guide ? ', tab "' + GUIDE_SHEET + '" (bản nháp dùng thử 0.4 · 04/11/2026, đọc trước khi tư vấn)' : '') +
          '. Đã khóa: ' + (res.locks.join(', ') || 'không tab nào') + '.' +
          '\nCông thức ghi theo ' + sepText + '.' +
          (notes.length ? '\n\n' + notes.join('\n') : ''));

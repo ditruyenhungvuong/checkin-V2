@@ -24,7 +24,7 @@ nhập **Mã số bệnh nhân** → chạm 1 trong **10 chấm mức** (không 
   chạy lại được): tô màu dòng theo mức (ĐỎ 1–3 · VÀNG 4–5 · XANH 6–10), tab **Tổng hợp** (mỗi mã số một dòng),
   tab **Tra cứu** (gõ mã ở ô B2, chỉ người có quyền sửa), cột **Gợi ý mở đầu** (Tổng hợp cột G, Tra cứu cột E: một câu
   gợi ý theo màu của mức và nhóm thẻ), tab **Hướng xử trí** ngay sau Tra cứu (bảng 3 màu + BÁO ĐỘNG, 9 thẻ chia 3 nhánh;
-  **bản nháp dùng thử 0.3 · 04/11/2026**, chưa ban hành, chưa kiểm định; chữ cố định trong code, tab khóa).
+  **bản nháp dùng thử 0.4 · 04/11/2026**, chưa ban hành, chưa kiểm định; chữ cố định trong code, tab khóa).
   Khóa cứng cả bốn tab trừ ô B2. Bác sĩ quyền **Người xem** không gõ được ô B2: mở tab Tổng hợp, bấm **Ctrl+F** gõ mã số BN,
   đọc cột G. Cách chia sẻ cho bác sĩ ở đầu `google_apps_script.js` (BƯỚC 5).
 
